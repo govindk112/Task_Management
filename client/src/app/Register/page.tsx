@@ -9,10 +9,10 @@ import Link from "next/link"
 
 export default function Register() {
   return (
-    <div className="bg-muted flex min-h-svh flex-col items-center justify-center p-6 md:p-10">
+    <div className=" flex min-h-svh flex-col items-center justify-center p-6 md:p-10">
       <div className="w-full max-w-sm md:max-w-3xl">
         <div className="flex flex-col gap-6">
-          <Card className="overflow-hidden p-0">
+          <Card className="overflow-hidden p-0 "style={{ backgroundColor: "#ADEED9" }}>
             <CardContent className="grid p-0 md:grid-cols-2">
               <form className="p-6 md:p-8">
                 <div className="flex flex-col gap-6">
