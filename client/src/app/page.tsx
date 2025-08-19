@@ -1,9 +1,14 @@
 
-import Login from "./Login/page";
-import Register from "./Register/page";
+import Dashboard from "@/components/Dashboard";
+import AddTaskModal from "@/components/AddTaskModal";
+import DeleteModal from "@/components/DeleteTask";
 
 export default function Home() {
   return (
-    <Login />
+    <>
+      <Dashboard />
+      <AddTaskModal />
+      <DeleteModal />
+    </>
   )
 }

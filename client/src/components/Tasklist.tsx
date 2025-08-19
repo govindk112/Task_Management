@@ -1,29 +1,29 @@
 "use client";
 
-import {format } from "date-fns";
+import { format } from "date-fns";
 import React, { useState } from "react";
 import { Button } from "./ui/button";
-import { Table,TableBody,TableFooter,TableHeader,TableHead,TableRow,TableCell } from "./ui/table";
-import { Select,SelectContent,SelectGroup,SelectItem,SelectLabel,SelectTrigger,SelectValue } from "./ui/select";
+import { Table, TableBody, TableFooter, TableHeader, TableHead, TableRow, TableCell } from "./ui/table";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "./ui/select";
+import { useTaskStore } from "@/store/taskStore";
+import EditDeleteMenu from "./EditTaskModel";
 
 const Tasklist = () => {
-    const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
-    const [statusFilter, setStatusFilter] = useState("all");
-    const [priorityFilter, setPriorityFilter] = useState("all");
-    const [sortBy, setSortBy] = useState("none");
+  const { tasks } = useTaskStore(); // ✅ fetch tasks from store
 
-    const tasks = [
-    { _id: "1", title: "Design Homepage", description: "Create hero section", priority: "High", status: "To Do", dueDate: new Date() },
-    { _id: "2", title: "Setup API", description: "Integrate auth", priority: "Medium", status: "In Progress", dueDate: new Date() },
-    { _id: "3", title: "Testing", description: "Unit tests", priority: "Low", status: "Completed", dueDate: new Date() },
-  ];
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("none");
 
+  // ✅ filtering
   const filteredTasks = tasks.filter(
     (task) =>
       (statusFilter === "all" || task.status === statusFilter) &&
       (priorityFilter === "all" || task.priority === priorityFilter)
   );
 
+  // ✅ sorting
   const sortedTasks = [...filteredTasks].sort((a, b) => {
     if (sortBy === "title")
       return sortOrder === "asc"
@@ -31,7 +31,7 @@ const Tasklist = () => {
         : b.title.localeCompare(a.title);
 
     if (sortBy === "priority") {
-      const priorityOrder: any = { Low: 0, Medium: 1, High: 2 };
+      const priorityOrder: Record<string, number> = { Low: 0, Medium: 1, High: 2 };
       return sortOrder === "asc"
         ? priorityOrder[a.priority] - priorityOrder[b.priority]
         : priorityOrder[b.priority] - priorityOrder[a.priority];
@@ -41,8 +41,8 @@ const Tasklist = () => {
       if (!a.dueDate) return sortOrder === "asc" ? 1 : -1;
       if (!b.dueDate) return sortOrder === "asc" ? -1 : 1;
       return sortOrder === "asc"
-        ? a.dueDate.getTime() - b.dueDate.getTime()
-        : b.dueDate.getTime() - a.dueDate.getTime();
+        ? new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+        : new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime();
     }
 
     return 0;
@@ -52,10 +52,8 @@ const Tasklist = () => {
     <div>
       {/* Filters */}
       <div className="mb-4 flex flex-wrap gap-4 justify-start">
-        <Select
-          value={statusFilter}
-          onValueChange={(value) => setStatusFilter(value)}
-        >
+        {/* Status Filter */}
+        <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value)}>
           <SelectTrigger className="w-fit px-4 bg-background dark:bg-secondary ">
             <SelectValue placeholder="Filter by status" />
           </SelectTrigger>
@@ -67,10 +65,8 @@ const Tasklist = () => {
           </SelectContent>
         </Select>
 
-        <Select
-          value={priorityFilter}
-          onValueChange={(value) => setPriorityFilter(value)}
-        >
+        {/* Priority Filter */}
+        <Select value={priorityFilter} onValueChange={(value) => setPriorityFilter(value)}>
           <SelectTrigger className="w-fit px-4 bg-background dark:bg-secondary ">
             <SelectValue placeholder="Filter by priority" />
           </SelectTrigger>
@@ -82,10 +78,8 @@ const Tasklist = () => {
           </SelectContent>
         </Select>
 
-        <Select
-          value={sortBy}
-          onValueChange={(value) => setSortBy(value)}
-        >
+        {/* Sort By */}
+        <Select value={sortBy} onValueChange={(value) => setSortBy(value)}>
           <SelectTrigger className="w-fit px-4 bg-background dark:bg-secondary ">
             <SelectValue placeholder="Sort by" />
           </SelectTrigger>
@@ -98,10 +92,7 @@ const Tasklist = () => {
         </Select>
 
         {sortBy !== "none" && (
-          <Button
-            variant="outline"
-            onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-          >
+          <Button variant="outline" onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}>
             {sortOrder === "asc" ? "Ascending" : "Descending"}
           </Button>
         )}
@@ -138,13 +129,9 @@ const Tasklist = () => {
                     </div>
                   </TableCell>
                   <TableCell className="text-nowrap">
-                    {task.dueDate
-                      ? format(task.dueDate, "MMM d, yyyy")
-                      : "No Due Date"}
+                    {task.dueDate ? format(new Date(task.dueDate), "MMM d, yyyy") : "No Due Date"}
                   </TableCell>
-                  <TableCell className="text-nowrap">
-                    {task.priority}
-                  </TableCell>
+                  <TableCell className="text-nowrap">{task.priority}</TableCell>
                   <TableCell className="text-nowrap">
                     <Select value={task.status} onValueChange={() => {}}>
                       <SelectTrigger className="bg-background">
@@ -161,8 +148,7 @@ const Tasklist = () => {
                     </Select>
                   </TableCell>
                   <TableCell className="text-right">
-                    {/* <EditDeleteMenu task={task} /> */}
-                    <span className="text-gray-400">Menu</span>
+                    <EditDeleteMenu task={task} />
                   </TableCell>
                 </TableRow>
               ))}
