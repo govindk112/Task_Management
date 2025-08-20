@@ -1,18 +1,33 @@
 "use client"
-import Header from "./Header"
-import Sidebar from "./Sidebar";
-import Tasklist from "./Tasklist";
-import Kanban from "./Kanban";
+
+import SidebarProject from "./SidebarProject"
 import { useDashboardStore } from "@/store/DashboardStore";
 
+// Pages
+import ProjectManagement from "./ProjectManagement";
+import UserManagement from "./UserManagement";
+import AnalyticsDashboard from "./AnalyticsPage";
 export default function Dashboard() {
-     const { boardView, setBoardView } = useDashboardStore()
-    return (
-     <div className="flex max-sm:flex-col h-screen bg-secondary dark:bg-background">
-      <Sidebar />
+  const { activePage } = useDashboardStore();
+
+  const renderPage = () => {
+    switch (activePage) {
+      case "project":
+        return <ProjectManagement />; // inside it you can show Tasklist / Kanban etc.
+      case "user":
+        return <UserManagement />;
+      case "analytics":
+        return <AnalyticsDashboard />;
+      default:
+        return <ProjectManagement />;
+    }
+  };
+
+  return (
+    <div className="flex max-sm:flex-col h-screen bg-secondary dark:bg-background">
+      <SidebarProject />
       <div className="flex-1 p-8 overflow-auto">
-        <Header />
-        {boardView === "list" ? <Tasklist  /> : <Kanban/>}
+        {renderPage()}
       </div>
     </div>
   );

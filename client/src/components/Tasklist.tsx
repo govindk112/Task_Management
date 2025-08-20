@@ -10,6 +10,7 @@ import EditDeleteMenu from "./EditTaskModel";
 
 const Tasklist = () => {
   const { tasks } = useTaskStore(); // ✅ fetch tasks from store
+  console.log("Tasks received:", tasks); // Debug log
 
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [statusFilter, setStatusFilter] = useState("all");
