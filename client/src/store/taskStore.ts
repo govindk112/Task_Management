@@ -4,30 +4,30 @@ import { create } from "zustand";
 
 export type State = {
   tasks: Task[];
-  newTask: Task;
-  tasktoDelete: string;
+  taskToEdit: Task | null;   // 🔑 null = add mode
+  taskToDelete: string;
 };
 
 export type Actions = {
   setTasks: (tasks: Task[]) => void;
-  setNewTask: (task: Task) => void;
+  setTaskToEdit: (task: Task | null) => void;
   addTask: (task: Task) => void;
   updateTask: (task: Task) => void;
   deleteTask: (taskId: string) => void;
   setTaskToDelete: (taskId: string) => void;
-  resetNewTask: () => void;
+  resetTaskToEdit: () => void;
 
-  // 🔑 Selector
+  // Selector
   getTasksByProject: (projectId: string) => Task[];
 };
 
 export const useTaskStore = create<State & Actions>((set, get) => ({
   tasks: [],
-  newTask: EMPTY_TASK,
-  tasktoDelete: "",
+  taskToEdit: null,
+  taskToDelete: "",
 
   setTasks: (tasks) => set({ tasks }),
-  setNewTask: (task) => set({ newTask: task }),
+  setTaskToEdit: (task) => set({ taskToEdit: task }),
   addTask: (task) => set((state) => ({ tasks: [...state.tasks, task] })),
   updateTask: (task) =>
     set((state) => ({
@@ -37,10 +37,10 @@ export const useTaskStore = create<State & Actions>((set, get) => ({
     set((state) => ({
       tasks: state.tasks.filter((task) => task._id !== taskId),
     })),
-  setTaskToDelete: (taskId) => set({ tasktoDelete: taskId }),
-  resetNewTask: () => set({ newTask: EMPTY_TASK }),
+  setTaskToDelete: (taskId) => set({ taskToDelete: taskId }),
+  resetTaskToEdit: () => set({ taskToEdit: null }),
 
-  // 🔑 Selector: Get all tasks under a project
+  // Selector: tasks by project
   getTasksByProject: (projectId) =>
     get().tasks.filter((t) => t.projectId === projectId),
 }));

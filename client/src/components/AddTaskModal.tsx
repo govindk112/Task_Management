@@ -1,226 +1,182 @@
 "use client";
 
-import { useEffect } from "react";
-import { Button } from "@/components/ui/button";
+import { useState, useEffect } from "react";
+import { useModalStore } from "@/store/modalStore";
+import { useTaskStore } from "@/store/taskStore";
+import { Task, TaskPriority, TaskStatus } from "@/Types/types";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+  DialogFooter,
+} from "./ui/dialog";
+import { Label } from "./ui/label";
+import { Input } from "./ui/input";
+import { Textarea } from "./ui/textarea";
 import {
   Select,
-  SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { useTaskStore } from "@/store/taskStore";
-import { useProjectStore } from "@/store/useProjectStore";
-import { format } from "date-fns";
-import { TaskPriority, TaskStatus } from "@/Types/types";
-
-type AddTaskModalProps = {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  projectId?: string;
-};
+  SelectContent,
+  SelectGroup,
+  SelectLabel,
+  SelectItem,
+} from "./ui/select";
+import { Button } from "./ui/button";
 
 export default function AddTaskModal({
-  open,
-  onOpenChange,
+  taskToEdit,
   projectId,
-}: AddTaskModalProps) {
-  const { newTask, setNewTask, addTask, updateTask, resetNewTask } =
-    useTaskStore();
-  const { projects } = useProjectStore();
+}: {
+  taskToEdit?: Task | null;
+  projectId?: string; // 🔑 Pass projectId when creating task inside a project
+}) {
+  const { isAddModalOpen, setIsAddModalOpen } = useModalStore();
+  const { addTask, updateTask } = useTaskStore();
 
-  // Reset newTask when modal closes
+  // form state
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [priority, setPriority] = useState<TaskPriority>("Medium");
+  const [status, setStatus] = useState<TaskStatus>("To Do");
+
+  // preload task data when editing
   useEffect(() => {
-    if (!open) resetNewTask();
-  }, [open, resetNewTask]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!newTask.title || !newTask.projectId) {
-      return; // validation
-    }
-
-    if (newTask._id) {
-      updateTask(newTask);
+    if (taskToEdit) {
+      setTitle(taskToEdit.title);
+      setDescription(taskToEdit.description || "");
+      setDueDate(
+        taskToEdit.dueDate
+          ? typeof taskToEdit.dueDate === "string"
+            ? taskToEdit.dueDate
+            : taskToEdit.dueDate.toISOString().slice(0, 10)
+          : ""
+      );
+      setPriority(taskToEdit.priority);
+      setStatus(taskToEdit.status);
     } else {
+      setTitle("");
+      setDescription("");
+      setDueDate("");
+      setPriority("Medium");
+      setStatus("To Do");
+    }
+  }, [taskToEdit, isAddModalOpen]);
+
+  const handleSubmit = () => {
+    if (!title.trim()) return;
+
+    if (taskToEdit) {
+      // 🔄 update
+      updateTask({
+        ...taskToEdit,
+        title,
+        description,
+        dueDate: dueDate ? new Date(dueDate) : undefined,
+        priority,
+        status,
+      });
+    } else {
+      // ➕ create
       addTask({
-        ...newTask,
-        _id: Date.now().toString(),
-        projectId: projectId || newTask.projectId,
+        _id: crypto.randomUUID(),
+        title,
+        description,
+        dueDate: dueDate ? new Date(dueDate) : undefined,
+        priority,
+        status,
+        projectId: projectId || "default", // ensure task is nested
       });
     }
 
-    resetNewTask();
-    onOpenChange(false);
-  };
-
-  const handleClose = () => {
-    resetNewTask();
-    onOpenChange(false);
+    setIsAddModalOpen(false);
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px]">
-        <form onSubmit={handleSubmit}>
-          <DialogHeader>
-            <DialogTitle>
-              {newTask._id ? "Edit Task" : "Add New Task"}
-            </DialogTitle>
-            <DialogDescription>
-              {newTask._id
-                ? "Update task details below."
-                : "Fill in the details to add a new task."}
-            </DialogDescription>
-          </DialogHeader>
+    <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {taskToEdit ? "Edit Task" : "Add New Task"}
+          </DialogTitle>
+        </DialogHeader>
 
-          <div className="grid gap-4 py-4">
-            {/* Title */}
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="title" className="text-right">
-                Title
-              </Label>
-              <Input
-                id="title"
-                name="title"
-                value={newTask.title}
-                onChange={(e) =>
-                  setNewTask({ ...newTask, title: e.target.value })
-                }
-                className="col-span-3"
-                required
-              />
-            </div>
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="title">Title</Label>
+            <Input
+              id="title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Enter task title"
+            />
+          </div>
 
-            {/* Description */}
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="description" className="text-right">
-                Description
-              </Label>
-              <Textarea
-                id="description"
-                name="description"
-                value={newTask.description}
-                onChange={(e) =>
-                  setNewTask({ ...newTask, description: e.target.value })
-                }
-                className="col-span-3"
-              />
-            </div>
+          <div>
+            <Label htmlFor="description">Description</Label>
+            <Textarea
+              id="description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Enter task description"
+            />
+          </div>
 
-            {/* Project */}
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="projectId" className="text-right">
-                Project
-              </Label>
-              <Select
-                name="projectId"
-                value={newTask.projectId || ""}
-                onValueChange={(value) =>
-                  setNewTask({ ...newTask, projectId: value })
-                }
-                disabled={!!projectId}
-              >
-                <SelectTrigger id="projectId" className="col-span-3">
-                  <SelectValue placeholder="Select a project" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects.map((project) => (
-                    <SelectItem key={project._id} value={project._id}>
-                      {project.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div>
+            <Label htmlFor="dueDate">Due Date</Label>
+            <Input
+              id="dueDate"
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+            />
+          </div>
 
-            {/* Status */}
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="status" className="text-right">
-                Status
-              </Label>
-              <Select
-                name="status"
-                value={newTask.status}
-                onValueChange={(value) =>
-                  setNewTask({ ...newTask, status: value as TaskStatus })
-                }
-              >
-                <SelectTrigger id="status" className="col-span-3">
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="To Do">To Do</SelectItem>
-                  <SelectItem value="In Progress">In Progress</SelectItem>
-                  <SelectItem value="Completed">Completed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Priority */}
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="priority" className="text-right">
-                Priority
-              </Label>
-              <Select
-                name="priority"
-                value={newTask.priority}
-                onValueChange={(value) =>
-                  setNewTask({ ...newTask, priority: value as TaskPriority })
-                }
-              >
-                <SelectTrigger id="priority" className="col-span-3">
-                  <SelectValue placeholder="Select priority" />
-                </SelectTrigger>
-                <SelectContent>
+          <div>
+            <Label>Priority</Label>
+            <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select priority" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectLabel>Priority</SelectLabel>
                   <SelectItem value="Low">Low</SelectItem>
                   <SelectItem value="Medium">Medium</SelectItem>
                   <SelectItem value="High">High</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Due Date */}
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="dueDate" className="text-right">
-                Due Date
-              </Label>
-              <Input
-                id="dueDate"
-                name="dueDate"
-                type="date"
-                value={
-                  newTask.dueDate ? format(newTask.dueDate, "yyyy-MM-dd") : ""
-                }
-                onChange={(e) =>
-                  setNewTask({ ...newTask, dueDate: new Date(e.target.value) })
-                }
-                className="col-span-3"
-              />
-            </div>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </div>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={handleClose}>
-              Cancel
-            </Button>
-            <Button type="submit">
-              {newTask._id ? "Save Changes" : "Add Task"}
-            </Button>
-          </DialogFooter>
-        </form>
+          <div>
+            <Label>Status</Label>
+            <Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectLabel>Status</SelectLabel>
+                  <SelectItem value="To Do">To Do</SelectItem>
+                  <SelectItem value="In Progress">In Progress</SelectItem>
+                  <SelectItem value="Completed">Completed</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsAddModalOpen(false)}>
+            Cancel
+          </Button>
+          <Button onClick={handleSubmit}>
+            {taskToEdit ? "Update Task" : "Add Task"}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

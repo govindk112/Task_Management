@@ -6,9 +6,16 @@ import { Calendar } from "lucide-react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { useTaskStore } from "@/store/taskStore";
 
-const Kanban = () => {
-  const { tasks, updateTask } = useTaskStore(); // ✅ use tasks from store
+interface KanbanProps {
+  projectId?: string | null;
+}
+
+const Kanban: React.FC<KanbanProps> = ({ projectId }) => {
+  const { tasks, updateTask, getTasksByProject } = useTaskStore();
   const statuses = ["To Do", "In Progress", "Completed"];
+
+  // Filter tasks by project if projectId is provided
+  const projectTasks = projectId ? getTasksByProject(projectId) : tasks;
 
   const onDragEnd = (result: any) => {
     if (!result.destination) return;
@@ -18,19 +25,8 @@ const Kanban = () => {
     // If moved to a new column (status change)
     if (source.droppableId !== destination.droppableId) {
       updateTask({
-        ...tasks.find((t) => t._id === draggableId)!,
+        ...projectTasks.find((t) => t._id === draggableId)!,
         status: destination.droppableId,
-      });
-    } else {
-      // If reordered in the same column
-      const columnTasks = tasks.filter((t) => t.status === source.droppableId);
-      const [movedTask] = columnTasks.splice(source.index, 1);
-      columnTasks.splice(destination.index, 0, movedTask);
-
-      // rebuild with new order
-      const newTasks = tasks.filter((t) => t.status !== source.droppableId);
-      [...newTasks, ...columnTasks].forEach((task, index) => {
-        updateTask({ ...task, index: index });
       });
     }
   };
@@ -51,9 +47,8 @@ const Kanban = () => {
                   ref={provided.innerRef}
                   className="space-y-2 min-h-[100px]"
                 >
-                  {tasks
+                  {projectTasks
                     .filter((task) => task.status === status)
-                    .sort((a, b) => (a.index ?? 0) - (b.index ?? 0)) // keep order
                     .map((task, index) => (
                       <Draggable
                         key={task._id}
@@ -92,7 +87,6 @@ const Kanban = () => {
                         )}
                       </Draggable>
                     ))}
-                  {provided.placeholder}
                 </div>
               )}
             </Droppable>

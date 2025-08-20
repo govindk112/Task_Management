@@ -28,5 +28,5 @@ export type Project = {
   startDate?: Date;
   endDate?: Date;
   owner?: string;  // 🔑 Link with User
-  status: "Active" | "On Hold" | "Completed";
+  status: ProjectStatus;
 };

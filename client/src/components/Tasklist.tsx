@@ -3,28 +3,42 @@
 import { format } from "date-fns";
 import React, { useState } from "react";
 import { Button } from "./ui/button";
-import { Table, TableBody, TableFooter, TableHeader, TableHead, TableRow, TableCell } from "./ui/table";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "./ui/select";
+import { Plus } from "lucide-react";
+import {
+  Table, TableBody, TableFooter, TableHeader, TableHead, TableRow, TableCell
+} from "./ui/table";
+import {
+  Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue
+} from "./ui/select";
 import { useTaskStore } from "@/store/taskStore";
+import { useModalStore } from "@/store/modalStore";
+import { TaskStatus } from "@/Types/types";
 import EditDeleteMenu from "./EditTaskModel";
 
-const Tasklist = () => {
-  const { tasks } = useTaskStore(); // ✅ fetch tasks from store
-  console.log("Tasks received:", tasks); // Debug log
+interface TasklistProps {
+  projectId?: string | null;
+}
+
+const Tasklist: React.FC<TasklistProps> = ({ projectId }) => {
+  const { tasks, getTasksByProject, updateTask } = useTaskStore();
+  const { isAddModalOpen, setIsAddModalOpen } = useModalStore();
+
+
+  const projectTasks = projectId ? getTasksByProject(projectId) : tasks;
 
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [sortBy, setSortBy] = useState("none");
 
-  // ✅ filtering
-  const filteredTasks = tasks.filter(
+  // filtering
+  const filteredTasks = projectTasks.filter(
     (task) =>
       (statusFilter === "all" || task.status === statusFilter) &&
       (priorityFilter === "all" || task.priority === priorityFilter)
   );
 
-  // ✅ sorting
+  // sorting
   const sortedTasks = [...filteredTasks].sort((a, b) => {
     if (sortBy === "title")
       return sortOrder === "asc"
@@ -45,12 +59,14 @@ const Tasklist = () => {
         ? new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
         : new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime();
     }
-
     return 0;
   });
 
   return (
     <div>
+      {/* Header with Add button */}
+      
+
       {/* Filters */}
       <div className="mb-4 flex flex-wrap gap-4 justify-start">
         {/* Status Filter */}
@@ -134,7 +150,12 @@ const Tasklist = () => {
                   </TableCell>
                   <TableCell className="text-nowrap">{task.priority}</TableCell>
                   <TableCell className="text-nowrap">
-                    <Select value={task.status} onValueChange={() => {}}>
+                    <Select
+                      value={task.status}
+                      onValueChange={(value) =>
+                        updateTask({ ...task, status: value as TaskStatus })
+                      }
+                    >
                       <SelectTrigger className="bg-background">
                         <SelectValue placeholder="Status" />
                       </SelectTrigger>

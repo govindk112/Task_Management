@@ -12,7 +12,7 @@ import { useModalStore } from "@/store/modalStore";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
-export default function Dashboard() {
+export default function DashboardPage() {
   const { boardView } = useDashboardStore();
   const { getTasksByProject } = useTaskStore();
   const { projects } = useProjectStore();
@@ -30,9 +30,6 @@ export default function Dashboard() {
       setProjectName("All Tasks");
     }
   }, [projectId, projects]);
-
-  // Get filtered tasks for the current project
-  const filteredTasks = projectId ? getTasksByProject(projectId) : [];
 
   return (
     <div className="flex max-sm:flex-col h-screen bg-secondary dark:bg-background">
