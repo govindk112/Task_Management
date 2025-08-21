@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useModalStore } from "@/store/modalStore";
 import { useTaskStore } from "@/store/taskStore";
 import { useUserStore } from "@/store/userStore";
@@ -25,7 +25,13 @@ import {
   SelectItem,
 } from "./ui/select";
 import { Button } from "./ui/button";
-import { v4 as uuidv4 } from "uuid"; // safer than crypto.randomUUID()
+
+type ProjectMember = {
+  id: string;      // user.id
+  name: string;
+  email: string;
+  avatarUrl?: string | null;
+};
 
 export default function AddTaskModal({
   taskToEdit,
@@ -36,7 +42,7 @@ export default function AddTaskModal({
 }) {
   const { isAddModalOpen, setIsAddModalOpen } = useModalStore();
   const { addTask, updateTask, tasks = [] } = useTaskStore();
-  const { users = [] } = useUserStore();
+  const { users: usersFromStore = [], token: tokenFromStore } = useUserStore();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -44,8 +50,60 @@ export default function AddTaskModal({
   const [priority, setPriority] = useState<TaskPriority>("Medium");
   const [status, setStatus] = useState<TaskStatus>("To Do");
   const [assignedUserIds, setAssignedUserIds] = useState<string[]>([]);
+  const [projectMembers, setProjectMembers] = useState<ProjectMember[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [errMsg, setErrMsg] = useState<string | null>(null);
 
-  // Preload task data when editing
+  // Load project members from backend whenever modal opens for a project
+  useEffect(() => {
+    const loadMembers = async () => {
+      if (!projectId) return;
+
+      const token = tokenFromStore || localStorage.getItem("token");
+      if (!token) return;
+
+      try {
+        const res = await fetch(`http://localhost:5000/projects/${projectId}`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!res.ok) {
+          // Fallback to users store if API fails
+          console.warn("Failed to load project; falling back to users store");
+          return;
+        }
+
+        const data = await res.json();
+        // Expecting shape: { id, name, ..., members: [{ user: {...} }, ...] }
+        const members: ProjectMember[] =
+          Array.isArray(data?.members)
+            ? data.members
+                .map((m: any) => m?.user)
+                .filter(Boolean)
+                .map((u: any) => ({
+                  id: u.id,
+                  name: u.name,
+                  email: u.email,
+                  avatarUrl: u.avatarUrl ?? null,
+                }))
+            : [];
+
+        setProjectMembers(members);
+      } catch (e) {
+        console.error("Error loading project members:", e);
+      }
+    };
+
+    if (isAddModalOpen) {
+      loadMembers();
+    }
+  }, [isAddModalOpen, projectId, tokenFromStore]);
+
+  // Preload edit data
   useEffect(() => {
     if (taskToEdit) {
       setTitle(taskToEdit.title);
@@ -54,9 +112,7 @@ export default function AddTaskModal({
         taskToEdit.dueDate
           ? typeof taskToEdit.dueDate === "string"
             ? taskToEdit.dueDate
-            : ((taskToEdit.dueDate && (taskToEdit.dueDate as any) instanceof Date)
-                ? (taskToEdit.dueDate as Date).toISOString().slice(0, 10)
-                : "")
+            : (taskToEdit.dueDate as Date).toISOString().slice(0, 10)
           : ""
       );
       setPriority(taskToEdit.priority as TaskPriority);
@@ -72,60 +128,143 @@ export default function AddTaskModal({
     }
   }, [taskToEdit, isAddModalOpen]);
 
-  const handleSubmit = () => {
-    if (!title.trim()) return;
+  const availableUsers: ProjectMember[] =
+    projectMembers.length > 0
+      ? projectMembers
+      : (usersFromStore as ProjectMember[]); // fallback if needed
 
-    const assignedUsers: User[] = users.filter((u) =>
-      assignedUserIds.includes(u.id)
-    );
+  // Normalize API task → client Task (store uses `_id`)
+  const normalizeTask = (apiTask: any): Task => {
+    const chosenUsers: User[] = availableUsers
+      .filter((u) => assignedUserIds.includes(u.id))
+      .map((u) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        avatarUrl: u.avatarUrl ?? undefined,
+      }));
 
-    if (taskToEdit) {
-      updateTask({
-        ...taskToEdit,
-        title,
-        description,
-        dueDate: dueDate || undefined,
-        priority,
-        status,
-        assignedUsers,
-      });
-    } else {
-      addTask({
-        _id: uuidv4(),
-        title,
-        description,
-        dueDate: dueDate || undefined,
-        priority,
-        status,
-        projectId: projectId || "default",
-        assignedUsers,
-      });
-    }
-
-    setIsAddModalOpen(false);
+    return {
+      _id: apiTask.id, // map API id to client _id
+      title: apiTask.title,
+      description: apiTask.description ?? "",
+      dueDate: apiTask.dueDate
+        ? new Date(apiTask.dueDate).toISOString().slice(0, 10)
+        : undefined,
+      priority: apiTask.priority as TaskPriority,
+      status: apiTask.status as TaskStatus,
+      projectId: apiTask.projectId,
+      assignedUsers: chosenUsers,
+    };
   };
 
-  // Users not assigned to other tasks in the same project
-  const availableUsers = users.filter(
-    (user) =>
-      !tasks.some(
-        (t) =>
-          t.projectId === (projectId || "default") &&
-          t._id !== taskToEdit?._id &&
-          t.assignedUsers?.some((u) => u.id === user.id)
-      )
-  );
+  const handleSubmit = async () => {
+    setErrMsg(null);
+    if (!title.trim()) {
+      setErrMsg("Title is required");
+      return;
+    }
+    if (!projectId) {
+      setErrMsg("No project selected");
+      return;
+    }
+
+    setLoading(true);
+
+    const token = tokenFromStore || localStorage.getItem("token");
+    if (!token) {
+      setErrMsg("No token found. Please log in again.");
+      setLoading(false);
+      return;
+    }
+
+    // Backend supports ONE assignee: use the first selected id (if any)
+    const assigneeId = assignedUserIds[0] ?? undefined;
+
+    try {
+      if (taskToEdit) {
+        // UPDATE
+        const taskId = (taskToEdit as any)._id || (taskToEdit as any).id;
+        const res = await fetch(`http://localhost:5000/tasks/${taskId}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            title,
+            description,
+            dueDate: dueDate || null,
+            priority,
+            status,
+            assigneeId,
+          }),
+        });
+
+        const text = await res.text();
+        let data: any = {};
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch {
+          // keep raw text in case of HTML error page
+          throw new Error(`Server returned non-JSON: ${text.slice(0, 200)}`);
+        }
+
+        if (!res.ok) {
+          throw new Error(data.error || `Failed to update task (${res.status})`);
+        }
+
+        updateTask(normalizeTask(data));
+      } else {
+        // CREATE
+        const res = await fetch(
+          `http://localhost:5000/projects/${projectId}/tasks`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              title,
+              description,
+              dueDate: dueDate || null,
+              priority,
+              status,
+              assigneeId,
+            }),
+          }
+        );
+
+        const text = await res.text();
+        let data: any = {};
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch {
+          throw new Error(`Server returned non-JSON: ${text.slice(0, 200)}`);
+        }
+
+        if (!res.ok) {
+          throw new Error(data.error || `Failed to add task (${res.status})`);
+        }
+
+        addTask(normalizeTask(data));
+      }
+
+      setIsAddModalOpen(false);
+    } catch (err: any) {
+      console.error("Error saving task:", err);
+      setErrMsg(err.message || "Failed to save task");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <Dialog
-      open={isAddModalOpen}
-      onOpenChange={(open) => setIsAddModalOpen(open)}
-    >
+    <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
-            {taskToEdit ? "Edit Task" : "Add New Task"}
-          </DialogTitle>
+          <DialogTitle>{taskToEdit ? "Edit Task" : "Add New Task"}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -199,6 +338,7 @@ export default function AddTaskModal({
             </Select>
           </div>
 
+          {/* Assign Users (from DB) – multi-check UI, send first as assigneeId */}
           <div>
             <Label>Assign Users</Label>
             <div className="flex flex-wrap gap-2 mt-2">
@@ -209,10 +349,10 @@ export default function AddTaskModal({
                     checked={assignedUserIds.includes(user.id)}
                     onChange={(e) => {
                       if (e.target.checked) {
-                        setAssignedUserIds([...assignedUserIds, user.id]);
+                        setAssignedUserIds((prev) => [...prev, user.id]);
                       } else {
-                        setAssignedUserIds(
-                          assignedUserIds.filter((id) => id !== user.id)
+                        setAssignedUserIds((prev) =>
+                          prev.filter((id) => id !== user.id)
                         );
                       }
                     }}
@@ -226,18 +366,22 @@ export default function AddTaskModal({
                 </span>
               )}
             </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Backend supports one assignee; the first checked user will be used.
+            </p>
           </div>
+
+          {errMsg && (
+            <p className="text-sm text-red-500">{errMsg}</p>
+          )}
         </div>
 
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => setIsAddModalOpen(false)}
-          >
+          <Button variant="outline" onClick={() => setIsAddModalOpen(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit}>
-            {taskToEdit ? "Update Task" : "Add Task"}
+          <Button onClick={handleSubmit} disabled={loading}>
+            {loading ? "Saving..." : taskToEdit ? "Update Task" : "Add Task"}
           </Button>
         </DialogFooter>
       </DialogContent>
