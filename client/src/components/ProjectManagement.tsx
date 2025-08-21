@@ -42,9 +42,26 @@ export default function ProjectManagement() {
 
       if (!res.ok) throw new Error("Failed to fetch projects");
       const data = await res.json();
-      setProjects(Array.isArray(data) ? data : data.projects || []);
+      
+      // Handle different response formats safely
+      let projectsData = [];
+      if (Array.isArray(data)) {
+        projectsData = data;
+      } else if (data && Array.isArray(data.projects)) {
+        projectsData = data.projects;
+      } else if (data && typeof data === 'object') {
+        // Try to extract array from object values
+        const values = Object.values(data);
+        if (values.length > 0 && Array.isArray(values[0])) {
+          projectsData = values[0];
+        }
+      }
+      
+      console.log("Fetched projects:", projectsData);
+      setProjects(projectsData);
     } catch (error) {
       console.error("Error fetching projects:", error);
+      setProjects([]); // Ensure projects is always an array
     }
   };
 
@@ -81,8 +98,8 @@ export default function ProjectManagement() {
       if (!res.ok) throw new Error("Failed to update project");
 
       // Update locally
-      setProjects((prev) =>
-        prev.map((p) => (p.id === editProject.id ? { ...p, name: editName, description: editDescription, colorCode: editColor } : p))
+      setProjects((prev: any[]) =>
+        prev.map((p: any) => (p.id === editProject.id ? { ...p, name: editName, description: editDescription, colorCode: editColor } : p))
       );
 
       setEditProject(null);

@@ -27,7 +27,7 @@ import {
 import { Button } from "./ui/button";
 
 type ProjectMember = {
-  id: string;      // user.id
+  id: string;
   name: string;
   email: string;
   avatarUrl?: string | null;
@@ -41,7 +41,7 @@ export default function AddTaskModal({
   projectId?: string;
 }) {
   const { isAddModalOpen, setIsAddModalOpen } = useModalStore();
-  const { addTask, updateTask, tasks = [] } = useTaskStore();
+  const { addTask, updateTask, setTaskToEdit } = useTaskStore();
   const { users: usersFromStore = [], token: tokenFromStore } = useUserStore();
 
   const [title, setTitle] = useState("");
@@ -54,12 +54,11 @@ export default function AddTaskModal({
   const [loading, setLoading] = useState(false);
   const [errMsg, setErrMsg] = useState<string | null>(null);
 
-  // Load project members from backend whenever modal opens for a project
+  // Load project members from backend
   useEffect(() => {
     const loadMembers = async () => {
       if (!projectId) return;
-
-      const token = tokenFromStore || localStorage.getItem("token");
+      const token = tokenFromStore || (typeof window !== "undefined" ? localStorage.getItem("token") : null);
       if (!token) return;
 
       try {
@@ -71,26 +70,17 @@ export default function AddTaskModal({
           },
         });
 
-        if (!res.ok) {
-          // Fallback to users store if API fails
-          console.warn("Failed to load project; falling back to users store");
-          return;
-        }
+        if (!res.ok) return;
 
         const data = await res.json();
-        // Expecting shape: { id, name, ..., members: [{ user: {...} }, ...] }
-        const members: ProjectMember[] =
-          Array.isArray(data?.members)
-            ? data.members
-                .map((m: any) => m?.user)
-                .filter(Boolean)
-                .map((u: any) => ({
-                  id: u.id,
-                  name: u.name,
-                  email: u.email,
-                  avatarUrl: u.avatarUrl ?? null,
-                }))
-            : [];
+        const members: ProjectMember[] = Array.isArray(data?.members)
+          ? data.members.map((m: any) => ({
+              id: m.user.id,
+              name: m.user.name,
+              email: m.user.email,
+              avatarUrl: m.user.avatarUrl ?? null,
+            }))
+          : [];
 
         setProjectMembers(members);
       } catch (e) {
@@ -98,12 +88,10 @@ export default function AddTaskModal({
       }
     };
 
-    if (isAddModalOpen) {
-      loadMembers();
-    }
+    if (isAddModalOpen) loadMembers();
   }, [isAddModalOpen, projectId, tokenFromStore]);
 
-  // Preload edit data
+  // Preload edit data whenever taskToEdit changes
   useEffect(() => {
     if (taskToEdit) {
       setTitle(taskToEdit.title);
@@ -126,14 +114,15 @@ export default function AddTaskModal({
       setStatus("To Do");
       setAssignedUserIds([]);
     }
-  }, [taskToEdit, isAddModalOpen]);
+  }, [taskToEdit]);
 
-  const availableUsers: ProjectMember[] =
-    projectMembers.length > 0
-      ? projectMembers
-      : (usersFromStore as ProjectMember[]); // fallback if needed
+  // Clear taskToEdit when modal closes
+  useEffect(() => {
+    if (!isAddModalOpen) setTaskToEdit(null);
+  }, [isAddModalOpen, setTaskToEdit]);
 
-  // Normalize API task → client Task (store uses `_id`)
+  const availableUsers: ProjectMember[] = projectMembers.length > 0 ? projectMembers : (usersFromStore as ProjectMember[]);
+
   const normalizeTask = (apiTask: any): Task => {
     const chosenUsers: User[] = availableUsers
       .filter((u) => assignedUserIds.includes(u.id))
@@ -145,12 +134,10 @@ export default function AddTaskModal({
       }));
 
     return {
-      _id: apiTask.id, // map API id to client _id
+      _id: apiTask.id,
       title: apiTask.title,
       description: apiTask.description ?? "",
-      dueDate: apiTask.dueDate
-        ? new Date(apiTask.dueDate).toISOString().slice(0, 10)
-        : undefined,
+      dueDate: apiTask.dueDate ? new Date(apiTask.dueDate).toISOString().slice(0, 10) : undefined,
       priority: apiTask.priority as TaskPriority,
       status: apiTask.status as TaskStatus,
       projectId: apiTask.projectId,
@@ -170,83 +157,39 @@ export default function AddTaskModal({
     }
 
     setLoading(true);
-
-    const token = tokenFromStore || localStorage.getItem("token");
+    const token = tokenFromStore || (typeof window !== "undefined" ? localStorage.getItem("token") : null);
     if (!token) {
       setErrMsg("No token found. Please log in again.");
       setLoading(false);
       return;
     }
 
-    // Backend supports ONE assignee: use the first selected id (if any)
     const assigneeId = assignedUserIds[0] ?? undefined;
 
     try {
       if (taskToEdit) {
         // UPDATE
-        const taskId = (taskToEdit as any)._id || (taskToEdit as any).id;
+        const taskId = taskToEdit._id;
         const res = await fetch(`http://localhost:5000/tasks/${taskId}`, {
           method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            title,
-            description,
-            dueDate: dueDate || null,
-            priority,
-            status,
-            assigneeId,
-          }),
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ title, description, dueDate: dueDate || null, priority, status, assigneeId }),
         });
 
-        const text = await res.text();
-        let data: any = {};
-        try {
-          data = text ? JSON.parse(text) : {};
-        } catch {
-          // keep raw text in case of HTML error page
-          throw new Error(`Server returned non-JSON: ${text.slice(0, 200)}`);
-        }
-
-        if (!res.ok) {
-          throw new Error(data.error || `Failed to update task (${res.status})`);
-        }
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to update task");
 
         updateTask(normalizeTask(data));
       } else {
         // CREATE
-        const res = await fetch(
-          `http://localhost:5000/projects/${projectId}/tasks`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              title,
-              description,
-              dueDate: dueDate || null,
-              priority,
-              status,
-              assigneeId,
-            }),
-          }
-        );
+        const res = await fetch(`http://localhost:5000/projects/${projectId}/tasks`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ title, description, dueDate: dueDate || null, priority, status, assigneeId }),
+        });
 
-        const text = await res.text();
-        let data: any = {};
-        try {
-          data = text ? JSON.parse(text) : {};
-        } catch {
-          throw new Error(`Server returned non-JSON: ${text.slice(0, 200)}`);
-        }
-
-        if (!res.ok) {
-          throw new Error(data.error || `Failed to add task (${res.status})`);
-        }
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to add task");
 
         addTask(normalizeTask(data));
       }
@@ -270,40 +213,22 @@ export default function AddTaskModal({
         <div className="space-y-4">
           <div>
             <Label htmlFor="title">Title</Label>
-            <Input
-              id="title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Enter task title"
-            />
+            <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Enter task title" />
           </div>
 
           <div>
             <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Enter task description"
-            />
+            <Textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Enter task description" />
           </div>
 
           <div>
             <Label htmlFor="dueDate">Due Date</Label>
-            <Input
-              id="dueDate"
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-            />
+            <Input id="dueDate" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
           </div>
 
           <div>
             <Label>Priority</Label>
-            <Select
-              value={priority}
-              onValueChange={(v) => setPriority(v as TaskPriority)}
-            >
+            <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)}>
               <SelectTrigger>
                 <SelectValue placeholder="Select priority" />
               </SelectTrigger>
@@ -320,10 +245,7 @@ export default function AddTaskModal({
 
           <div>
             <Label>Status</Label>
-            <Select
-              value={status}
-              onValueChange={(v) => setStatus(v as TaskStatus)}
-            >
+            <Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
               <SelectTrigger>
                 <SelectValue placeholder="Select status" />
               </SelectTrigger>
@@ -338,7 +260,6 @@ export default function AddTaskModal({
             </Select>
           </div>
 
-          {/* Assign Users (from DB) – multi-check UI, send first as assigneeId */}
           <div>
             <Label>Assign Users</Label>
             <div className="flex flex-wrap gap-2 mt-2">
@@ -348,41 +269,24 @@ export default function AddTaskModal({
                     type="checkbox"
                     checked={assignedUserIds.includes(user.id)}
                     onChange={(e) => {
-                      if (e.target.checked) {
-                        setAssignedUserIds((prev) => [...prev, user.id]);
-                      } else {
-                        setAssignedUserIds((prev) =>
-                          prev.filter((id) => id !== user.id)
-                        );
-                      }
+                      if (e.target.checked) setAssignedUserIds((prev) => [...prev, user.id]);
+                      else setAssignedUserIds((prev) => prev.filter((id) => id !== user.id));
                     }}
                   />
                   <span>{user.name}</span>
                 </label>
               ))}
-              {availableUsers.length === 0 && (
-                <span className="text-xs text-muted-foreground">
-                  No users available
-                </span>
-              )}
+              {availableUsers.length === 0 && <span className="text-xs text-muted-foreground">No users available</span>}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Backend supports one assignee; the first checked user will be used.
-            </p>
+            <p className="text-xs text-muted-foreground mt-1">Backend supports one assignee; the first checked user will be used.</p>
           </div>
 
-          {errMsg && (
-            <p className="text-sm text-red-500">{errMsg}</p>
-          )}
+          {errMsg && <p className="text-sm text-red-500">{errMsg}</p>}
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setIsAddModalOpen(false)}>
-            Cancel
-          </Button>
-          <Button onClick={handleSubmit} disabled={loading}>
-            {loading ? "Saving..." : taskToEdit ? "Update Task" : "Add Task"}
-          </Button>
+          <Button variant="outline" onClick={() => setIsAddModalOpen(false)}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={loading}>{loading ? "Saving..." : taskToEdit ? "Update Task" : "Add Task"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

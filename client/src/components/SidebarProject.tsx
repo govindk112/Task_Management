@@ -1,33 +1,50 @@
-"use client"
+"use client";
 
-import { Button } from "./ui/button"
+import { Button } from "./ui/button";
 import { useRouter } from "next/navigation";
-import { HamburgerIcon, LayoutGrid, List, LogOut, Moon, Sun, Users, BarChart3, FolderKanban } from "lucide-react"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu"
-import { useDashboardStore } from "@/store/DashboardStore"
-import { useTheme } from "next-themes"
+import {
+  HamburgerIcon,
+  FolderKanban,
+  Users,
+  BarChart3,
+  LogOut,
+  Sun,
+  Moon,
+} from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "./ui/dropdown-menu";
+import { useDashboardStore } from "@/store/DashboardStore";
+import { useTheme } from "next-themes";
 
 const SidebarProject = () => {
-  const { boardView, setBoardView, activePage, setActivePage } = useDashboardStore();
+  const { activePage, setActivePage } = useDashboardStore();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
 
+  const handleLogout = () => {
+    localStorage.removeItem("token"); // remove token
+    router.push("/Login"); // redirect to login
+  };
+
+  const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
+
   return (
     <>
-      {/* MOBILE MENU  */}
+      {/* MOBILE MENU */}
       <div className="sm:hidden flex justify-between items-center p-3 shadow-md bg-background">
         <h1 className="text-xl font-bold dark:text-white">Dashboard</h1>
 
-        <div className="flex justify-center items-center">
+        <div className="flex items-center gap-2">
           {/* Theme Toggle */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          >
+          <Button variant="ghost" size="icon" onClick={toggleTheme}>
             {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
           </Button>
 
+          {/* Dropdown Menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon">
@@ -37,7 +54,6 @@ const SidebarProject = () => {
             <DropdownMenuContent align="end" className="space-y-2 p-4">
               <h1 className="py-2 font-bold border-b">Menu</h1>
 
-              {/* Project Management */}
               <DropdownMenuItem asChild>
                 <Button
                   variant={activePage === "project" ? "default" : "link"}
@@ -49,7 +65,6 @@ const SidebarProject = () => {
                 </Button>
               </DropdownMenuItem>
 
-              {/* User Management */}
               <DropdownMenuItem asChild>
                 <Button
                   variant={activePage === "user" ? "default" : "link"}
@@ -61,7 +76,6 @@ const SidebarProject = () => {
                 </Button>
               </DropdownMenuItem>
 
-              {/* Analytics Report */}
               <DropdownMenuItem asChild>
                 <Button
                   variant={activePage === "analytics" ? "default" : "link"}
@@ -73,9 +87,9 @@ const SidebarProject = () => {
                 </Button>
               </DropdownMenuItem>
 
-              <DropdownMenuItem className="bg-red-400 dark:bg-red-600">
+              <DropdownMenuItem className="bg-red-400 dark:bg-red-600" onClick={handleLogout}>
                 <LogOut className="mr-2 h-4 w-4" />
-                <span>Logout</span>
+                Logout
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -87,17 +101,12 @@ const SidebarProject = () => {
         <div className="flex flex-col h-full">
           <div className="p-4 flex items-center justify-between">
             <h1 className="text-xl font-bold dark:text-white">Dashboard</h1>
-            {/* Theme Toggle */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            >
+            <Button variant="ghost" size="icon" onClick={toggleTheme}>
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
           </div>
 
-          {/* Sidebar Nav */}
+          {/* Sidebar Navigation */}
           <nav className="flex-1 space-y-2 px-2">
             <Button
               variant={activePage === "project" ? "default" : "link"}
@@ -127,9 +136,9 @@ const SidebarProject = () => {
             </Button>
           </nav>
 
-          {/* Logout */}
+          {/* Logout Button */}
           <div className="flex items-center gap-4 p-4">
-            <Button variant="destructive" className="w-full">
+            <Button variant="destructive" className="w-full" onClick={handleLogout}>
               <LogOut className="w-4 h-4 mr-2" />
               Logout
             </Button>

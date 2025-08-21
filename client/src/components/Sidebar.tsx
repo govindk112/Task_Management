@@ -13,6 +13,10 @@ const Sidebar = () => {
   const { boardView, setBoardView } = useDashboardStore();
    const router = useRouter();
    const { theme, setTheme } = useTheme();
+   const handleLogout = () => {
+    localStorage.removeItem("token"); // remove token
+    router.push("/Login"); // redirect to login
+  };
   return (
     <>
       {/* MOBILE MENU  */}
@@ -59,9 +63,9 @@ const Sidebar = () => {
                   Kanban View
                 </Button>
               </DropdownMenuItem>
-              <DropdownMenuItem className="bg-red-400 dark:bg-red-600">
+              <DropdownMenuItem className="bg-red-400 dark:bg-red-600" onClick={handleLogout}>
                 <LogOut className="mr-2 h-4 w-4" />
-                <span>Logout</span>
+                Logout
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -106,7 +110,7 @@ const Sidebar = () => {
            <div className="flex items-center gap-4 p-4">
 
       {/* Logout Button */}
-      <Button variant="destructive" className="w-full">
+      <Button variant="destructive" className="w-full" onClick={handleLogout}>
         <LogOut className=" w-0"/>
         Logout
       </Button>
