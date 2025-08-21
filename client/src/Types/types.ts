@@ -4,23 +4,26 @@ export type BoardView = "list" | "kanban";
 export type ProjectStatus = "Planning" | "Active" | "In Progress" | "On Hold" | "Completed" | "Cancelled";
 export type ProjectPriority = "Low" | "Medium" | "High" | "Critical";
 
-export type User = {
+export interface User {
+  id: string;
   name: string;
   email: string;
-  token: string;
-};
+  avatar?: string;
+}
 
 export type Task = {
   _id: string;
-  projectId: string;   // 🔑 Link with Project
   title: string;
   description?: string;
-  status: TaskStatus;
-  priority: TaskPriority;
-  dueDate?: Date;
+  priority: string;
+  status: string;
+  dueDate?: string;
+  projectId?: string;
+  assignedUsers: User[]; // <-- Add this
 };
 
 export type Project = {
+  [x: string]: string | undefined;
   _id: string;
   name: string;
   priority: ProjectPriority;

@@ -82,6 +82,17 @@ const Kanban: React.FC<KanbanProps> = ({ projectId }) => {
                                   {format(new Date(task.dueDate), "MMM d, yyyy")}
                                 </div>
                               )}
+                              {/* User badges */}
+                              <div className="flex gap-1 mt-2">
+                                {task.assignedUsers?.map((user) => (
+                                  <Badge key={user.id} variant="secondary" className="text-xs">
+                                    {user.name}
+                                  </Badge>
+                                ))}
+                                {(!task.assignedUsers || task.assignedUsers.length === 0) && (
+                                  <Badge variant="outline" className="text-xs">Unassigned</Badge>
+                                )}
+                              </div>
                             </div>
                           </div>
                         )}

@@ -1,5 +1,7 @@
 "use client"
-import { useState } from "react"
+import { useTaskStore } from "@/store/taskStore"
+import { useUserStore } from "@/store/userStore"
+import { useProjectStore } from "@/store/useProjectStore"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import {
@@ -12,51 +14,40 @@ import {
   CartesianGrid,
 } from "recharts"
 
-interface AnalyticsData {
-  totalProjects: number
-  totalUsers: number
-  totalTasks: number
-  completedTasks: number
-  pendingTasks: number
-  inProgressTasks: number
-  userActivity: Array<{
-    name: string
-    tasksCompleted: number
-  }>
-  projectProgress: Array<{
-    name: string
-    progress: number
-    totalTasks: number
-  }>
-}
-
 export default function AnalyticsDashboard() {
-  const [analyticsData] = useState<AnalyticsData>({
-    totalProjects: 5,
-    totalUsers: 12,
-    totalTasks: 48,
-    completedTasks: 32,
-    pendingTasks: 8,
-    inProgressTasks: 8,
-    userActivity: [
-      { name: "John Doe", tasksCompleted: 12 },
-      { name: "Jane Smith", tasksCompleted: 10 },
-      { name: "Bob Johnson", tasksCompleted: 8 },
-      { name: "Alice Brown", tasksCompleted: 6 },
-      { name: "Charlie Wilson", tasksCompleted: 4 },
-    ],
-    projectProgress: [
-      { name: "Website Redesign", progress: 85, totalTasks: 20 },
-      { name: "Mobile App", progress: 60, totalTasks: 15 },
-      { name: "API Development", progress: 40, totalTasks: 10 },
-      { name: "Database Migration", progress: 90, totalTasks: 8 },
-      { name: "Testing Suite", progress: 25, totalTasks: 12 },
-    ],
+  const { tasks = [] } = useTaskStore()
+  const { users = [] } = useUserStore()
+  const { projects = [] } = useProjectStore()
+
+  // Task status counts
+  const completedTasks = tasks.filter(t => t.status === "Completed").length
+  const inProgressTasks = tasks.filter(t => t.status === "In Progress").length
+  const pendingTasks = tasks.filter(t => t.status === "To Do").length
+
+  // User activity: count completed tasks per user
+  const userActivity = users.map(user => ({
+    name: user.name,
+    tasksCompleted: tasks.filter(
+      t => t.status === "Completed" && t.assignedUsers?.some(u => u.id === user.id)
+    ).length,
+  })).sort((a, b) => b.tasksCompleted - a.tasksCompleted)
+
+  // Project progress: percent completed per project
+  const projectProgress = projects.map((project) => {
+    const projectTasks = tasks.filter(t => t.projectId === project.id)
+    const totalTasks = projectTasks.length
+    const completed = projectTasks.filter(t => t.status === "Completed").length
+    const progress = totalTasks ? Math.round((completed / totalTasks) * 100) : 0
+    return {
+      name: project.name,
+      progress,
+      totalTasks,
+    }
   })
 
-  const completionRate = Math.round(
-    (analyticsData.completedTasks / analyticsData.totalTasks) * 100
-  )
+  const completionRate = tasks.length
+    ? Math.round((completedTasks / tasks.length) * 100)
+    : 0
 
   return (
     <div className="space-y-6">
@@ -67,7 +58,7 @@ export default function AnalyticsDashboard() {
             <CardTitle className="text-sm font-medium">Total Projects</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{analyticsData.totalProjects}</div>
+            <div className="text-2xl font-bold">{projects.length}</div>
           </CardContent>
         </Card>
 
@@ -76,7 +67,7 @@ export default function AnalyticsDashboard() {
             <CardTitle className="text-sm font-medium">Total Users</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{analyticsData.totalUsers}</div>
+            <div className="text-2xl font-bold">{users.length}</div>
           </CardContent>
         </Card>
 
@@ -85,7 +76,7 @@ export default function AnalyticsDashboard() {
             <CardTitle className="text-sm font-medium">Total Tasks</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{analyticsData.totalTasks}</div>
+            <div className="text-2xl font-bold">{tasks.length}</div>
           </CardContent>
         </Card>
 
@@ -110,31 +101,25 @@ export default function AnalyticsDashboard() {
             <div className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-sm">Completed</span>
-                <span className="text-sm font-medium">{analyticsData.completedTasks}</span>
+                <span className="text-sm font-medium">{completedTasks}</span>
               </div>
-              <Progress
-                value={(analyticsData.completedTasks / analyticsData.totalTasks) * 100}
-              />
+              <Progress value={tasks.length ? (completedTasks / tasks.length) * 100 : 0} />
             </div>
 
             <div className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-sm">In Progress</span>
-                <span className="text-sm font-medium">{analyticsData.inProgressTasks}</span>
+                <span className="text-sm font-medium">{inProgressTasks}</span>
               </div>
-              <Progress
-                value={(analyticsData.inProgressTasks / analyticsData.totalTasks) * 100}
-              />
+              <Progress value={tasks.length ? (inProgressTasks / tasks.length) * 100 : 0} />
             </div>
 
             <div className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-sm">Pending</span>
-                <span className="text-sm font-medium">{analyticsData.pendingTasks}</span>
+                <span className="text-sm font-medium">{pendingTasks}</span>
               </div>
-              <Progress
-                value={(analyticsData.pendingTasks / analyticsData.totalTasks) * 100}
-              />
+              <Progress value={tasks.length ? (pendingTasks / tasks.length) * 100 : 0} />
             </div>
           </CardContent>
         </Card>
@@ -146,7 +131,7 @@ export default function AnalyticsDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {analyticsData.projectProgress.map((project) => (
+              {projectProgress.map((project) => (
                 <div key={project.name} className="space-y-2">
                   <div className="flex justify-between">
                     <span className="text-sm font-medium">{project.name}</span>
@@ -156,8 +141,9 @@ export default function AnalyticsDashboard() {
                   </div>
                   <Progress value={project.progress} />
                   <div className="text-xs text-muted-foreground">
-                    {Math.round((project.progress / 100) * project.totalTasks)} of{" "}
-                    {project.totalTasks} tasks completed
+                    {project.totalTasks
+                      ? `${Math.round((project.progress / 100) * project.totalTasks)} of ${project.totalTasks} tasks completed`
+                      : "No tasks"}
                   </div>
                 </div>
               ))}
@@ -174,7 +160,7 @@ export default function AnalyticsDashboard() {
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={analyticsData.userActivity}>
+            <BarChart data={userActivity}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="name" />
               <YAxis />

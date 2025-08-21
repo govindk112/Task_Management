@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useModalStore } from "@/store/modalStore";
 import { useTaskStore } from "@/store/taskStore";
+import { useUserStore } from "@/store/userStore"; // You need a user store or import users from UserManagement
 import { Task, TaskPriority, TaskStatus } from "@/Types/types";
 import {
   Dialog,
@@ -34,6 +35,7 @@ export default function AddTaskModal({
 }) {
   const { isAddModalOpen, setIsAddModalOpen } = useModalStore();
   const { addTask, updateTask } = useTaskStore();
+  const { users = [], tasks = [] } = useUserStore(); // Get all users and tasks
 
   // form state
   const [title, setTitle] = useState("");
@@ -41,6 +43,9 @@ export default function AddTaskModal({
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState<TaskPriority>("Medium");
   const [status, setStatus] = useState<TaskStatus>("To Do");
+
+  // Multi-user assignment state
+  const [assignedUserIds, setAssignedUserIds] = useState<string[]>([]);
 
   // preload task data when editing
   useEffect(() => {
@@ -56,17 +61,33 @@ export default function AddTaskModal({
       );
       setPriority(taskToEdit.priority);
       setStatus(taskToEdit.status);
+      setAssignedUserIds(taskToEdit.assignedUsers?.map((u) => u.id) || []);
     } else {
       setTitle("");
       setDescription("");
       setDueDate("");
       setPriority("Medium");
       setStatus("To Do");
+      setAssignedUserIds([]);
     }
   }, [taskToEdit, isAddModalOpen]);
 
+  // Filter users: only those not assigned to another task in this project
+  const availableUsers = users.filter(
+    (user) =>
+      !tasks.some(
+        (t) =>
+          t.projectId === (projectId || "default") &&
+          t._id !== taskToEdit?._id &&
+          t.assignedUsers?.some((u) => u.id === user.id)
+      )
+  );
+
   const handleSubmit = () => {
     if (!title.trim()) return;
+
+    // Get user objects from IDs
+    const assignedUsers = users.filter((u) => assignedUserIds.includes(u.id));
 
     if (taskToEdit) {
       // 🔄 update
@@ -77,6 +98,7 @@ export default function AddTaskModal({
         dueDate: dueDate ? new Date(dueDate) : undefined,
         priority,
         status,
+        assignedUsers,
       });
     } else {
       // ➕ create
@@ -88,6 +110,7 @@ export default function AddTaskModal({
         priority,
         status,
         projectId: projectId || "default", // ensure task is nested
+        assignedUsers,
       });
     }
 
@@ -136,7 +159,10 @@ export default function AddTaskModal({
 
           <div>
             <Label>Priority</Label>
-            <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)}>
+            <Select
+              value={priority}
+              onValueChange={(v) => setPriority(v as TaskPriority)}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Select priority" />
               </SelectTrigger>
@@ -153,7 +179,10 @@ export default function AddTaskModal({
 
           <div>
             <Label>Status</Label>
-            <Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
+            <Select
+              value={status}
+              onValueChange={(v) => setStatus(v as TaskStatus)}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Select status" />
               </SelectTrigger>
@@ -166,6 +195,35 @@ export default function AddTaskModal({
                 </SelectGroup>
               </SelectContent>
             </Select>
+          </div>
+
+          <div>
+            <Label>Assign Users</Label>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {availableUsers.map((user) => (
+                <label key={user.id} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={assignedUserIds.includes(user.id)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setAssignedUserIds([...assignedUserIds, user.id]);
+                      } else {
+                        setAssignedUserIds(
+                          assignedUserIds.filter((id) => id !== user.id)
+                        );
+                      }
+                    }}
+                  />
+                  <span>{user.name}</span>
+                </label>
+              ))}
+              {availableUsers.length === 0 && (
+                <span className="text-xs text-muted-foreground">
+                  No users available
+                </span>
+              )}
+            </div>
           </div>
         </div>
 

@@ -14,6 +14,7 @@ import { useTaskStore } from "@/store/taskStore";
 import { useModalStore } from "@/store/modalStore";
 import { TaskStatus } from "@/Types/types";
 import EditDeleteMenu from "./EditTaskModel";
+import { Badge } from "./ui/badge";
 
 interface TasklistProps {
   projectId?: string | null;
@@ -129,6 +130,7 @@ const Tasklist: React.FC<TasklistProps> = ({ projectId }) => {
                 <TableHead className="text-nowrap">Due Date</TableHead>
                 <TableHead>Priority</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Assigned Users</TableHead>
                 <TableHead className="text-right">Menu</TableHead>
               </TableRow>
             </TableHeader>
@@ -144,6 +146,8 @@ const Tasklist: React.FC<TasklistProps> = ({ projectId }) => {
                         </p>
                       )}
                     </div>
+                    {/* User badges */}
+                    
                   </TableCell>
                   <TableCell className="text-nowrap">
                     {task.dueDate ? format(new Date(task.dueDate), "MMM d, yyyy") : "No Due Date"}
@@ -169,6 +173,18 @@ const Tasklist: React.FC<TasklistProps> = ({ projectId }) => {
                       </SelectContent>
                     </Select>
                   </TableCell>
+                        <TableCell>
+              <div className="flex gap-1">
+                {task.assignedUsers?.map(user => (
+                  <Badge key={user.id} variant="secondary" className="text-xs">
+                    {user.name}
+                  </Badge>
+                ))}
+                {(!task.assignedUsers || task.assignedUsers.length === 0) && (
+                  <Badge variant="outline" className="text-xs">Unassigned</Badge>
+                )}
+              </div>
+            </TableCell>
                   <TableCell className="text-right">
                     <EditDeleteMenu task={task} />
                   </TableCell>
