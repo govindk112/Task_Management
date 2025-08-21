@@ -54,8 +54,6 @@ export default function Dashboard() {
         
         {/* Modals */}
         <AddTaskModal 
-          open={isAddModalOpen} 
-          onOpenChange={setIsAddModalOpen}
           projectId={projectId || undefined}
         />
         <DeleteModal />

@@ -3,8 +3,8 @@
 import { useState, useEffect } from "react";
 import { useModalStore } from "@/store/modalStore";
 import { useTaskStore } from "@/store/taskStore";
-import { useUserStore } from "@/store/userStore"; // You need a user store or import users from UserManagement
-import { Task, TaskPriority, TaskStatus } from "@/Types/types";
+import { useUserStore } from "@/store/userStore";
+import { Task, TaskPriority, TaskStatus, User } from "@/Types/types";
 import {
   Dialog,
   DialogContent,
@@ -25,29 +25,27 @@ import {
   SelectItem,
 } from "./ui/select";
 import { Button } from "./ui/button";
+import { v4 as uuidv4 } from "uuid"; // safer than crypto.randomUUID()
 
 export default function AddTaskModal({
   taskToEdit,
   projectId,
 }: {
   taskToEdit?: Task | null;
-  projectId?: string; // 🔑 Pass projectId when creating task inside a project
+  projectId?: string;
 }) {
   const { isAddModalOpen, setIsAddModalOpen } = useModalStore();
-  const { addTask, updateTask } = useTaskStore();
-  const { users = [], tasks = [] } = useUserStore(); // Get all users and tasks
+  const { addTask, updateTask, tasks = [] } = useTaskStore();
+  const { users = [] } = useUserStore();
 
-  // form state
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState<TaskPriority>("Medium");
   const [status, setStatus] = useState<TaskStatus>("To Do");
-
-  // Multi-user assignment state
   const [assignedUserIds, setAssignedUserIds] = useState<string[]>([]);
 
-  // preload task data when editing
+  // Preload task data when editing
   useEffect(() => {
     if (taskToEdit) {
       setTitle(taskToEdit.title);
@@ -56,11 +54,13 @@ export default function AddTaskModal({
         taskToEdit.dueDate
           ? typeof taskToEdit.dueDate === "string"
             ? taskToEdit.dueDate
-            : taskToEdit.dueDate.toISOString().slice(0, 10)
+            : ((taskToEdit.dueDate && (taskToEdit.dueDate as any) instanceof Date)
+                ? (taskToEdit.dueDate as Date).toISOString().slice(0, 10)
+                : "")
           : ""
       );
-      setPriority(taskToEdit.priority);
-      setStatus(taskToEdit.status);
+      setPriority(taskToEdit.priority as TaskPriority);
+      setStatus(taskToEdit.status as TaskStatus);
       setAssignedUserIds(taskToEdit.assignedUsers?.map((u) => u.id) || []);
     } else {
       setTitle("");
@@ -72,7 +72,40 @@ export default function AddTaskModal({
     }
   }, [taskToEdit, isAddModalOpen]);
 
-  // Filter users: only those not assigned to another task in this project
+  const handleSubmit = () => {
+    if (!title.trim()) return;
+
+    const assignedUsers: User[] = users.filter((u) =>
+      assignedUserIds.includes(u.id)
+    );
+
+    if (taskToEdit) {
+      updateTask({
+        ...taskToEdit,
+        title,
+        description,
+        dueDate: dueDate || undefined,
+        priority,
+        status,
+        assignedUsers,
+      });
+    } else {
+      addTask({
+        _id: uuidv4(),
+        title,
+        description,
+        dueDate: dueDate || undefined,
+        priority,
+        status,
+        projectId: projectId || "default",
+        assignedUsers,
+      });
+    }
+
+    setIsAddModalOpen(false);
+  };
+
+  // Users not assigned to other tasks in the same project
   const availableUsers = users.filter(
     (user) =>
       !tasks.some(
@@ -83,42 +116,11 @@ export default function AddTaskModal({
       )
   );
 
-  const handleSubmit = () => {
-    if (!title.trim()) return;
-
-    // Get user objects from IDs
-    const assignedUsers = users.filter((u) => assignedUserIds.includes(u.id));
-
-    if (taskToEdit) {
-      // 🔄 update
-      updateTask({
-        ...taskToEdit,
-        title,
-        description,
-        dueDate: dueDate ? new Date(dueDate) : undefined,
-        priority,
-        status,
-        assignedUsers,
-      });
-    } else {
-      // ➕ create
-      addTask({
-        _id: crypto.randomUUID(),
-        title,
-        description,
-        dueDate: dueDate ? new Date(dueDate) : undefined,
-        priority,
-        status,
-        projectId: projectId || "default", // ensure task is nested
-        assignedUsers,
-      });
-    }
-
-    setIsAddModalOpen(false);
-  };
-
   return (
-    <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
+    <Dialog
+      open={isAddModalOpen}
+      onOpenChange={(open) => setIsAddModalOpen(open)}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
@@ -228,7 +230,10 @@ export default function AddTaskModal({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setIsAddModalOpen(false)}>
+          <Button
+            variant="outline"
+            onClick={() => setIsAddModalOpen(false)}
+          >
             Cancel
           </Button>
           <Button onClick={handleSubmit}>

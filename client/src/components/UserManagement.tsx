@@ -8,6 +8,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useTaskStore } from "@/store/taskStore"
+import { useProjectStore } from "@/store/useProjectStore"
 
 interface User {
   id: string
@@ -15,37 +17,37 @@ interface User {
   email: string
   role: 'Admin' | 'Manager' | 'Member'
   status: 'Active' | 'Inactive'
-  joinDate: string
 }
 
 const mockUsers: User[] = [
-  { id: '1', name: 'John Doe', email: 'john@example.com', role: 'Admin', status: 'Active', joinDate: '2024-01-15' },
-  { id: '2', name: 'Jane Smith', email: 'jane@example.com', role: 'Manager', status: 'Active', joinDate: '2024-02-20' },
-  { id: '3', name: 'Bob Johnson', email: 'bob@example.com', role: 'Member', status: 'Inactive', joinDate: '2024-03-10' },
+  { id: '1', name: 'John Doe', email: 'john@example.com', role: 'Admin', status: 'Active' },
+  { id: '2', name: 'Jane Smith', email: 'jane@example.com', role: 'Manager', status: 'Active' },
+  { id: '3', name: 'Bob Johnson', email: 'bob@example.com', role: 'Member', status: 'Inactive' },
 ]
 
 export default function UserManagement() {
   const [users, setUsers] = useState<User[]>(mockUsers)
+  const { tasks = [] } = useTaskStore()
+  const { projects = [] } = useProjectStore()
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
 
-  const handleAddUser = (userData: Omit<User, 'id' | 'joinDate'>) => {
+  const handleAddUser = (userData: Omit<User, 'id'>) => {
     const newUser: User = {
       ...userData,
       id: Date.now().toString(),
-      joinDate: new Date().toISOString().split('T')[0]
     }
     setUsers([...users, newUser])
   }
 
   const handleEditUser = (userId: string, updates: Partial<User>) => {
-    setUsers(users.map(user => 
+    setUsers(users.map(user =>
       user.id === userId ? { ...user, ...updates } : user
     ))
   }
 
   const handleDeactivateUser = (userId: string) => {
-    setUsers(users.map(user => 
+    setUsers(users.map(user =>
       user.id === userId ? { ...user, status: 'Inactive' } : user
     ))
   }
@@ -55,7 +57,7 @@ export default function UserManagement() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">User Management</h1>
         <Dialog>
@@ -87,50 +89,62 @@ export default function UserManagement() {
                 <TableHead>Email</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Join Date</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell className="font-medium">{user.name}</TableCell>
-                  <TableCell>{user.email}</TableCell>
-                  <TableCell>
-                    <Badge variant={user.role === 'Admin' ? 'default' : user.role === 'Manager' ? 'secondary' : 'outline'}>
-                      {user.role}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={user.status === 'Active' ? 'default' : 'secondary'}>
-                      {user.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{user.joinDate}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedUser(user)
-                          setIsEditModalOpen(true)
-                        }}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDeactivateUser(user.id)}
-                        disabled={user.status === 'Inactive'}
-                      >
-                        Deactivate
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {users.map((user) => {
+                // Find tasks assigned to this user
+                const assignedTasks = tasks.filter(t =>
+                  t.assignedUsers?.some(u => u.id === user.id)
+                )
+                // Find unique projects for this user
+                const assignedProjectIds = [
+                  ...new Set(assignedTasks.map(t => t.projectId).filter(Boolean))
+                ]
+                const assignedProjects = projects.filter(p =>
+                  assignedProjectIds.includes(p.id)
+                )
+
+                return (
+                  <TableRow key={user.id}>
+                    <TableCell className="font-medium">{user.name}</TableCell>
+                    <TableCell>{user.email}</TableCell>
+                    <TableCell>
+                      <Badge variant={user.role === 'Admin' ? 'default' : user.role === 'Manager' ? 'secondary' : 'outline'}>
+                        {user.role}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={user.status === 'Active' ? 'default' : 'secondary'}>
+                        {user.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedUser(user)
+                            setIsEditModalOpen(true)
+                          }}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDeactivateUser(user.id)}
+                          disabled={user.status === 'Inactive'}
+                        >
+                          Deactivate
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
         </CardContent>
@@ -159,7 +173,7 @@ export default function UserManagement() {
   )
 }
 
-function AddUserForm({ onAdd }: { onAdd: (userData: Omit<User, 'id' | 'joinDate'>) => void }) {
+function AddUserForm({ onAdd }: { onAdd: (userData: Omit<User, 'id'>) => void }) {
   const [formData, setFormData] = useState({
     name: '',
     email: '',

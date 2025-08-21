@@ -23,13 +23,12 @@ export type Task = {
 };
 
 export type Project = {
-  [x: string]: string | undefined;
   _id: string;
   name: string;
   priority: ProjectPriority;
   description?: string;
-  startDate?: Date;
-  endDate?: Date;
+  startDate?: Date | undefined;
+  endDate?: Date | undefined;
   owner?: string;  // 🔑 Link with User
   status: ProjectStatus;
 };

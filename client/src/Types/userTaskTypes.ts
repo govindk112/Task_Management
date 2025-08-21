@@ -1,6 +1,10 @@
+import { ReactNode } from "react";
 import { Task } from "./types";
 
 export interface User {
+  role: string;
+  status: string;
+  joinDate: ReactNode;
   id: string;
   name: string;
   email: string;

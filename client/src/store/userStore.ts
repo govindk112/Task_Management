@@ -14,11 +14,36 @@ interface UserStore {
 
 // Use the same structure as UserManagement
 const initialUsers: User[] = [
-  { id: '1', name: 'John Doe', email: 'john@example.com', avatar: 'JD' },
-  { id: '2', name: 'Jane Smith', email: 'jane@example.com', avatar: 'JS' },
-  { id: '3', name: 'Bob Johnson', email: 'bob@example.com', avatar: 'BJ' },
-  { id: '4', name: 'Alice Williams', email: 'alice@example.com', avatar: 'AW' },
-  { id: '5', name: 'Charlie Brown', email: 'charlie@example.com', avatar: 'CB' },
+  {
+    id: '1', name: 'John Doe', email: 'john@example.com', avatar: 'JD',
+    role: '',
+    status: '',
+    joinDate: undefined
+  },
+  {
+    id: '2', name: 'Jane Smith', email: 'jane@example.com', avatar: 'JS',
+    role: '',
+    status: '',
+    joinDate: undefined
+  },
+  {
+    id: '3', name: 'Bob Johnson', email: 'bob@example.com', avatar: 'BJ',
+    role: '',
+    status: '',
+    joinDate: undefined
+  },
+  {
+    id: '4', name: 'Alice Williams', email: 'alice@example.com', avatar: 'AW',
+    role: '',
+    status: '',
+    joinDate: undefined
+  },
+  {
+    id: '5', name: 'Charlie Brown', email: 'charlie@example.com', avatar: 'CB',
+    role: '',
+    status: '',
+    joinDate: undefined
+  },
 ];
 
 export const useUserStore = create<UserStore>((set, get) => ({
