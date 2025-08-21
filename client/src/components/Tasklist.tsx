@@ -1,9 +1,8 @@
 "use client";
 
 import { format } from "date-fns";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "./ui/button";
-import { Plus } from "lucide-react";
 import {
   Table, TableBody, TableFooter, TableHeader, TableHead, TableRow, TableCell
 } from "./ui/table";
@@ -12,25 +11,80 @@ import {
 } from "./ui/select";
 import { useTaskStore } from "@/store/taskStore";
 import { useModalStore } from "@/store/modalStore";
-import { TaskStatus } from "@/Types/types";
+import { Task, TaskStatus } from "@/Types/types";
 import EditDeleteMenu from "./EditTaskModel";
 import { Badge } from "./ui/badge";
 
 interface TasklistProps {
-  projectId?: string | null;
+  projectId: string;
 }
 
 const Tasklist: React.FC<TasklistProps> = ({ projectId }) => {
-  const { tasks, getTasksByProject, updateTask } = useTaskStore();
-  const { isAddModalOpen, setIsAddModalOpen } = useModalStore();
+  const { getTasksByProject, setTasks, updateTask } = useTaskStore();
+  const { setIsAddModalOpen } = useModalStore();
 
-
-  const projectTasks = projectId ? getTasksByProject(projectId) : tasks;
+  const projectTasks = getTasksByProject(projectId);
 
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [sortBy, setSortBy] = useState("none");
+
+  useEffect(() => {
+    const fetchTasks = async () => {
+      try {
+        const res = await fetch(`http://localhost:5000/projects/${projectId}/tasks`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        });
+
+        if (!res.ok) {
+          throw new Error("Failed to fetch tasks");
+        }
+
+        const data: Task[] = await res.json();
+        setTasks(data); // put tasks into Zustand
+      } catch (err) {
+        console.error("Error fetching tasks:", err);
+      }
+    };
+
+    if (projectId) {
+      fetchTasks();
+    }
+  }, [projectId, setTasks]);
+
+  // ✅ Handle updating task status on backend
+  const handleStatusChange = async (task: Task, newStatus: TaskStatus) => {
+    const taskId = task._id || task._id;
+    if (!taskId) {
+      console.error("Task ID is missing:", task);
+      return;
+    }
+
+    try {
+      const res = await fetch(`http://localhost:5000/tasks/${taskId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to update task status");
+      }
+
+      const updated = await res.json();
+      updateTask(updated); // ✅ update Zustand with backend response
+    } catch (err) {
+      console.error("Error updating task:", err);
+    }
+  };
 
   // filtering
   const filteredTasks = projectTasks.filter(
@@ -65,9 +119,6 @@ const Tasklist: React.FC<TasklistProps> = ({ projectId }) => {
 
   return (
     <div>
-      {/* Header with Add button */}
-      
-
       {/* Filters */}
       <div className="mb-4 flex flex-wrap gap-4 justify-start">
         {/* Status Filter */}
@@ -136,7 +187,7 @@ const Tasklist: React.FC<TasklistProps> = ({ projectId }) => {
             </TableHeader>
             <TableBody>
               {sortedTasks.map((task) => (
-                <TableRow key={task._id}>
+                <TableRow key={task._id || task._id || Math.random()}>
                   <TableCell className="space-y-2 text-nowrap w-1/2 capitalize">
                     <div>
                       <h3 className="font-semibold text-base">{task.title}</h3>
@@ -146,8 +197,6 @@ const Tasklist: React.FC<TasklistProps> = ({ projectId }) => {
                         </p>
                       )}
                     </div>
-                    {/* User badges */}
-                    
                   </TableCell>
                   <TableCell className="text-nowrap">
                     {task.dueDate ? format(new Date(task.dueDate), "MMM d, yyyy") : "No Due Date"}
@@ -156,9 +205,7 @@ const Tasklist: React.FC<TasklistProps> = ({ projectId }) => {
                   <TableCell className="text-nowrap">
                     <Select
                       value={task.status}
-                      onValueChange={(value) =>
-                        updateTask({ ...task, status: value as TaskStatus })
-                      }
+                      onValueChange={(value) => handleStatusChange(task, value as TaskStatus)}
                     >
                       <SelectTrigger className="bg-background">
                         <SelectValue placeholder="Status" />
@@ -173,18 +220,18 @@ const Tasklist: React.FC<TasklistProps> = ({ projectId }) => {
                       </SelectContent>
                     </Select>
                   </TableCell>
-                        <TableCell>
-              <div className="flex gap-1">
-                {task.assignedUsers?.map(user => (
-                  <Badge key={user.id} variant="secondary" className="text-xs">
-                    {user.name}
-                  </Badge>
-                ))}
-                {(!task.assignedUsers || task.assignedUsers.length === 0) && (
-                  <Badge variant="outline" className="text-xs">Unassigned</Badge>
-                )}
-              </div>
-            </TableCell>
+                  <TableCell>
+                    <div className="flex gap-1">
+                      {task.assignedUsers?.map(user => (
+                        <Badge key={user.id} variant="secondary" className="text-xs">
+                          {user.name}
+                        </Badge>
+                      ))}
+                      {(!task.assignedUsers || task.assignedUsers.length === 0) && (
+                        <Badge variant="outline" className="text-xs">Unassigned</Badge>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell className="text-right">
                     <EditDeleteMenu task={task} />
                   </TableCell>

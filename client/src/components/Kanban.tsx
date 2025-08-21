@@ -1,33 +1,100 @@
 "use client";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { format } from "date-fns";
 import { Badge } from "./ui/badge";
 import { Calendar } from "lucide-react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
-import { useTaskStore } from "@/store/taskStore";
+
+interface User {
+  id: string;
+  name: string;
+}
+
+interface Task {
+  _id?: string;
+  id?: string;
+  title: string;
+  description?: string;
+  priority: string;
+  status: string;
+  dueDate?: string;
+  assignedUsers?: User[];
+  projectId?: string;
+}
 
 interface KanbanProps {
   projectId?: string | null;
 }
 
 const Kanban: React.FC<KanbanProps> = ({ projectId }) => {
-  const { tasks, updateTask, getTasksByProject } = useTaskStore();
+  const [tasks, setTasks] = useState<Task[]>([]);
   const statuses = ["To Do", "In Progress", "Completed"];
 
-  // Filter tasks by project if projectId is provided
-  const projectTasks = projectId ? getTasksByProject(projectId) : tasks;
+  // ✅ Fetch tasks from backend
+  const fetchTasks = async () => {
+    try {
+      const res = await fetch(
+        `http://localhost:5000/projects/${projectId}/tasks`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        }
+      );
 
-  const onDragEnd = (result: any) => {
+      if (!res.ok) throw new Error("Failed to fetch tasks");
+
+      const data = await res.json();
+      setTasks(data); // store tasks in state
+    } catch (error) {
+      console.error("Error fetching tasks:", error);
+    }
+  };
+
+  useEffect(() => {
+    if (projectId) fetchTasks();
+  }, [projectId]);
+
+  // ✅ Update status on drag & drop
+  const onDragEnd = async (result: any) => {
     if (!result.destination) return;
 
     const { source, destination, draggableId } = result;
 
-    // If moved to a new column (status change)
+    // Only run if status changed
     if (source.droppableId !== destination.droppableId) {
-      updateTask({
-        ...projectTasks.find((t) => t._id === draggableId)!,
-        status: destination.droppableId,
-      });
+      const movedTask = tasks.find((t) => 
+        (t._id || t.id)?.toString() === draggableId
+      );
+      if (!movedTask) return;
+
+      const updatedTask = { ...movedTask, status: destination.droppableId };
+      const taskId = movedTask._id || movedTask.id;
+
+      // Update UI instantly
+      setTasks((prev) =>
+        prev.map((t) => 
+          ((t._id || t.id)?.toString() === draggableId) ? updatedTask : t
+        )
+      );
+
+      // Persist update in backend
+      if (taskId) {
+        try {
+          await fetch(`http://localhost:5000/tasks/${taskId}`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
+            body: JSON.stringify({ status: destination.droppableId }),
+          });
+        } catch (error) {
+          console.error("Error updating task status:", error);
+        }
+      }
     }
   };
 
@@ -47,12 +114,12 @@ const Kanban: React.FC<KanbanProps> = ({ projectId }) => {
                   ref={provided.innerRef}
                   className="space-y-2 min-h-[100px]"
                 >
-                  {projectTasks
+                  {tasks
                     .filter((task) => task.status === status)
                     .map((task, index) => (
                       <Draggable
-                        key={task._id}
-                        draggableId={task._id}
+                        key={task._id || task.id || index}
+                        draggableId={(task._id || task.id || index.toString()).toString()}
                         index={index}
                       >
                         {(provided) => (
@@ -82,15 +149,24 @@ const Kanban: React.FC<KanbanProps> = ({ projectId }) => {
                                   {format(new Date(task.dueDate), "MMM d, yyyy")}
                                 </div>
                               )}
-                              {/* User badges */}
                               <div className="flex gap-1 mt-2">
                                 {task.assignedUsers?.map((user) => (
-                                  <Badge key={user.id} variant="secondary" className="text-xs">
+                                  <Badge
+                                    key={user.id}
+                                    variant="secondary"
+                                    className="text-xs"
+                                  >
                                     {user.name}
                                   </Badge>
                                 ))}
-                                {(!task.assignedUsers || task.assignedUsers.length === 0) && (
-                                  <Badge variant="outline" className="text-xs">Unassigned</Badge>
+                                {(!task.assignedUsers ||
+                                  task.assignedUsers.length === 0) && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-xs"
+                                  >
+                                    Unassigned
+                                  </Badge>
                                 )}
                               </div>
                             </div>
@@ -98,6 +174,7 @@ const Kanban: React.FC<KanbanProps> = ({ projectId }) => {
                         )}
                       </Draggable>
                     ))}
+                  {provided.placeholder}
                 </div>
               )}
             </Droppable>
