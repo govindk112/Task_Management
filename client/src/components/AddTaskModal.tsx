@@ -5,43 +5,16 @@ import { useModalStore } from "@/store/modalStore";
 import { useTaskStore } from "@/store/taskStore";
 import { useUserStore } from "@/store/userStore";
 import { Task, TaskPriority, TaskStatus, User } from "@/Types/types";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "./ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "./ui/dialog";
 import { Label } from "./ui/label";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectGroup,
-  SelectLabel,
-  SelectItem,
-} from "./ui/select";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from "./ui/select";
 import { Button } from "./ui/button";
 
-type ProjectMember = {
-  id: string;
-  name: string;
-  email: string;
-  avatarUrl?: string | null;
-};
-
-export default function AddTaskModal({
-  taskToEdit,
-  projectId,
-}: {
-  taskToEdit?: Task | null;
-  projectId?: string;
-}) {
+export default function AddTaskModal({ projectId }: { projectId?: string }) {
   const { isAddModalOpen, setIsAddModalOpen } = useModalStore();
-  const { addTask, updateTask, setTaskToEdit } = useTaskStore();
+  const { taskToEdit, setTaskToEdit, addTask, updateTask, deleteTask } = useTaskStore();
   const { users: usersFromStore = [], token: tokenFromStore } = useUserStore();
 
   const [title, setTitle] = useState("");
@@ -50,191 +23,148 @@ export default function AddTaskModal({
   const [priority, setPriority] = useState<TaskPriority>("Medium");
   const [status, setStatus] = useState<TaskStatus>("To Do");
   const [assignedUserIds, setAssignedUserIds] = useState<string[]>([]);
-  const [projectMembers, setProjectMembers] = useState<ProjectMember[]>([]);
+  const [projectMembers, setProjectMembers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [errMsg, setErrMsg] = useState<string | null>(null);
 
-  // Load project members from backend
-  useEffect(() => {
-    const loadMembers = async () => {
-      if (!projectId) return;
-      const token = tokenFromStore || (typeof window !== "undefined" ? localStorage.getItem("token") : null);
-      if (!token) return;
+  const token = tokenFromStore || (typeof window !== "undefined" ? localStorage.getItem("token") : null);
 
+  // Load project members
+  useEffect(() => {
+    if (!isAddModalOpen || !projectId || !token) return;
+    const fetchMembers = async () => {
       try {
         const res = await fetch(`http://localhost:5000/projects/${projectId}`, {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { Authorization: `Bearer ${token}` },
         });
-
         if (!res.ok) return;
-
         const data = await res.json();
-        const members: ProjectMember[] = Array.isArray(data?.members)
-          ? data.members.map((m: any) => ({
-              id: m.user.id,
-              name: m.user.name,
-              email: m.user.email,
-              avatarUrl: m.user.avatarUrl ?? null,
-            }))
-          : [];
-
-        setProjectMembers(members);
-      } catch (e) {
-        console.error("Error loading project members:", e);
+        setProjectMembers((data?.members || []).map((m: any) => ({
+          id: m.user.id,
+          name: m.user.name,
+          email: m.user.email,
+          avatarUrl: m.user.avatarUrl || undefined,
+        })));
+      } catch (err) {
+        console.error(err);
       }
     };
+    fetchMembers();
+  }, [isAddModalOpen, projectId, token]);
 
-    if (isAddModalOpen) loadMembers();
-  }, [isAddModalOpen, projectId, tokenFromStore]);
-
-  // Preload edit data whenever taskToEdit changes
+  // Prefill form for editing
   useEffect(() => {
+    if (!isAddModalOpen) return;
     if (taskToEdit) {
       setTitle(taskToEdit.title);
       setDescription(taskToEdit.description || "");
-      setDueDate(
-        taskToEdit.dueDate
-          ? typeof taskToEdit.dueDate === "string"
-            ? taskToEdit.dueDate
-            : (taskToEdit.dueDate as Date).toISOString().slice(0, 10)
-          : ""
-      );
-      setPriority(taskToEdit.priority as TaskPriority);
-      setStatus(taskToEdit.status as TaskStatus);
-      setAssignedUserIds(taskToEdit.assignedUsers?.map((u) => u.id) || []);
+      setDueDate(taskToEdit.dueDate ? taskToEdit.dueDate.slice(0, 10) : "");
+      setPriority(taskToEdit.priority);
+      setStatus(taskToEdit.status);
+      setAssignedUserIds(taskToEdit.assignedUsers?.map(u => u.id) || []);
     } else {
-      setTitle("");
-      setDescription("");
-      setDueDate("");
-      setPriority("Medium");
-      setStatus("To Do");
-      setAssignedUserIds([]);
+      setTitle(""); setDescription(""); setDueDate(""); setPriority("Medium"); setStatus("To Do"); setAssignedUserIds([]);
     }
-  }, [taskToEdit]);
+  }, [isAddModalOpen, taskToEdit]);
 
-  // Clear taskToEdit when modal closes
-  useEffect(() => {
-    if (!isAddModalOpen) setTaskToEdit(null);
-  }, [isAddModalOpen, setTaskToEdit]);
-
-  const availableUsers: ProjectMember[] = projectMembers.length > 0 ? projectMembers : (usersFromStore as ProjectMember[]);
-
-  const normalizeTask = (apiTask: any): Task => {
-    const chosenUsers: User[] = availableUsers
-      .filter((u) => assignedUserIds.includes(u.id))
-      .map((u) => ({
-        id: u.id,
-        name: u.name,
-        email: u.email,
-        avatarUrl: u.avatarUrl ?? undefined,
-      }));
-
-    return {
-      _id: apiTask.id,
-      title: apiTask.title,
-      description: apiTask.description ?? "",
-      dueDate: apiTask.dueDate ? new Date(apiTask.dueDate).toISOString().slice(0, 10) : undefined,
-      priority: apiTask.priority as TaskPriority,
-      status: apiTask.status as TaskStatus,
-      projectId: apiTask.projectId,
-      assignedUsers: chosenUsers,
-    };
-  };
+  const availableUsers = projectMembers.length > 0 ? projectMembers : usersFromStore;
 
   const handleSubmit = async () => {
     setErrMsg(null);
-    if (!title.trim()) {
-      setErrMsg("Title is required");
-      return;
-    }
-    if (!projectId) {
-      setErrMsg("No project selected");
-      return;
-    }
+    if (!title.trim()) return setErrMsg("Title is required");
+    if (!projectId) return setErrMsg("No project selected");
+    if (!token) return setErrMsg("Please log in again");
 
     setLoading(true);
-    const token = tokenFromStore || (typeof window !== "undefined" ? localStorage.getItem("token") : null);
-    if (!token) {
-      setErrMsg("No token found. Please log in again.");
-      setLoading(false);
-      return;
-    }
-
-    const assigneeId = assignedUserIds[0] ?? undefined;
+    const assigneeId = assignedUserIds[0] || taskToEdit?.assignedUsers?.[0]?.id;
 
     try {
+      let res, data;
       if (taskToEdit) {
-        // UPDATE
-        const taskId = taskToEdit._id;
-        const res = await fetch(`http://localhost:5000/tasks/${taskId}`, {
+        // Edit existing task
+        res = await fetch(`http://localhost:5000/tasks/${taskToEdit._id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ title, description, dueDate: dueDate || null, priority, status, assigneeId }),
+          body: JSON.stringify({ title, description, dueDate, priority, status, assigneeId }),
         });
-
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed to update task");
-
-        updateTask(normalizeTask(data));
       } else {
-        // CREATE
-        const res = await fetch(`http://localhost:5000/projects/${projectId}/tasks`, {
+        // Add new task
+        res = await fetch(`http://localhost:5000/projects/${projectId}/tasks`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ title, description, dueDate: dueDate || null, priority, status, assigneeId }),
+          body: JSON.stringify({ title, description, dueDate, priority, status, assigneeId }),
         });
-
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed to add task");
-
-        addTask(normalizeTask(data));
       }
 
+      data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to save task");
+
+      const updatedTask: Task = {
+        _id: data._id || data.id,
+        title: data.title,
+        description: data.description || "",
+        dueDate: data.dueDate ? new Date(data.dueDate).toISOString().slice(0, 10) : undefined,
+        priority: data.priority,
+        status: data.status,
+        projectId: data.projectId,
+        assignedUsers: availableUsers.filter(u => assignedUserIds.includes(u.id)),
+      };
+
+      taskToEdit ? updateTask(updatedTask) : addTask(updatedTask);
+
       setIsAddModalOpen(false);
+      setTaskToEdit(null);
     } catch (err: any) {
-      console.error("Error saving task:", err);
       setErrMsg(err.message || "Failed to save task");
     } finally {
       setLoading(false);
     }
   };
 
+  const handleDelete = async () => {
+    if (!taskToEdit || !taskToEdit._id) return;
+    if (!confirm("Are you sure you want to delete this task?")) return;
+
+    setLoading(true);
+    try {
+      const res = await fetch(`http://localhost:5000/tasks/${taskToEdit._id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to delete task");
+      }
+
+      deleteTask(taskToEdit._id);
+      setIsAddModalOpen(false);
+      setTaskToEdit(null);
+    } catch (err: any) {
+      console.error("Delete failed:", err);
+      alert(err.message || "Failed to delete task");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
+    <Dialog open={isAddModalOpen} onOpenChange={(open) => { setIsAddModalOpen(open); if (!open) setTaskToEdit(null); }}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{taskToEdit ? "Edit Task" : "Add New Task"}</DialogTitle>
+          <DialogTitle>{taskToEdit ? "Edit Task" : "Add Task"}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
-          <div>
-            <Label htmlFor="title">Title</Label>
-            <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Enter task title" />
-          </div>
-
-          <div>
-            <Label htmlFor="description">Description</Label>
-            <Textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Enter task description" />
-          </div>
-
-          <div>
-            <Label htmlFor="dueDate">Due Date</Label>
-            <Input id="dueDate" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-          </div>
+          <div><Label>Title</Label><Input value={title} onChange={e => setTitle(e.target.value)} /></div>
+          <div><Label>Description</Label><Textarea value={description} onChange={e => setDescription(e.target.value)} /></div>
+          <div><Label>Due Date</Label><Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} /></div>
 
           <div>
             <Label>Priority</Label>
-            <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select priority" />
-              </SelectTrigger>
+            <Select value={priority} onValueChange={v => setPriority(v as TaskPriority)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  <SelectLabel>Priority</SelectLabel>
                   <SelectItem value="Low">Low</SelectItem>
                   <SelectItem value="Medium">Medium</SelectItem>
                   <SelectItem value="High">High</SelectItem>
@@ -245,13 +175,10 @@ export default function AddTaskModal({
 
           <div>
             <Label>Status</Label>
-            <Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select status" />
-              </SelectTrigger>
+            <Select value={status} onValueChange={v => setStatus(v as TaskStatus)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  <SelectLabel>Status</SelectLabel>
                   <SelectItem value="To Do">To Do</SelectItem>
                   <SelectItem value="In Progress">In Progress</SelectItem>
                   <SelectItem value="Completed">Completed</SelectItem>
@@ -262,31 +189,28 @@ export default function AddTaskModal({
 
           <div>
             <Label>Assign Users</Label>
-            <div className="flex flex-wrap gap-2 mt-2">
-              {availableUsers.map((user) => (
-                <label key={user.id} className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={assignedUserIds.includes(user.id)}
-                    onChange={(e) => {
-                      if (e.target.checked) setAssignedUserIds((prev) => [...prev, user.id]);
-                      else setAssignedUserIds((prev) => prev.filter((id) => id !== user.id));
-                    }}
-                  />
-                  <span>{user.name}</span>
+            <div className="flex flex-wrap gap-2">
+              {availableUsers.map(u => (
+                <label key={u.id} className="flex items-center gap-2">
+                  <input type="checkbox" checked={assignedUserIds.includes(u.id)}
+                         onChange={e => e.target.checked
+                           ? setAssignedUserIds([...assignedUserIds, u.id])
+                           : setAssignedUserIds(assignedUserIds.filter(id => id !== u.id))} />
+                  {u.name}
                 </label>
               ))}
-              {availableUsers.length === 0 && <span className="text-xs text-muted-foreground">No users available</span>}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">Backend supports one assignee; the first checked user will be used.</p>
           </div>
 
-          {errMsg && <p className="text-sm text-red-500">{errMsg}</p>}
+          {errMsg && <p className="text-red-500">{errMsg}</p>}
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setIsAddModalOpen(false)}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={loading}>{loading ? "Saving..." : taskToEdit ? "Update Task" : "Add Task"}</Button>
+        <DialogFooter className="flex justify-between">
+          <Button variant="outline" onClick={() => { setIsAddModalOpen(false); setTaskToEdit(null); }}>Cancel</Button>
+          <div className="flex gap-2">
+            {taskToEdit && <Button variant="destructive" onClick={handleDelete} disabled={loading}>{loading ? "Deleting..." : "Delete"}</Button>}
+            <Button onClick={handleSubmit} disabled={loading}>{loading ? "Saving..." : taskToEdit ? "Update Task" : "Add Task"}</Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
