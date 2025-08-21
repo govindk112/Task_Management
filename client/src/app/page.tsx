@@ -12,7 +12,7 @@ export default function Home() {
     if (token) {
       router.push("/dashboard"); // redirect to dashboard if authenticated
     } else {
-      router.push("/login"); // redirect to login if not authenticated
+      router.push("/Login"); // redirect to login if not authenticated
     }
   }, [router]);
 

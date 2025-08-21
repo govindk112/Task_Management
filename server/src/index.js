@@ -7,6 +7,7 @@ import projectRoutes from "./routes/projects.routes.js";
 import taskRoutes from "./routes/tasks.routes.js";   // <-- add this
 import commentRoutes from "./routes/comments.routes.js";
 import notificationRoutes from "./routes/notifications.routes.js";
+import userRoutes from "./routes/user.routes.js";
 
 
 
@@ -17,6 +18,7 @@ app.use(cors());
 app.use(express.json());
 app.use("/comments", commentRoutes);
 app.use("/notifications", notificationRoutes);
+app.use("/users", userRoutes);
 
 
 
