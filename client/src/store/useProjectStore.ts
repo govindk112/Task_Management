@@ -6,7 +6,7 @@ type ProjectStore = {
   newProject: Project;
   projectToDelete: string;
 
-  setProjects: (projects: Project[]) => void;
+  setProjects: (projects: Project[] | ((prev: Project[]) => Project[])) => void;
   addProject: (project: Project) => void;
   updateProject: (project: Project) => void;
   deleteProject: (projectId: string) => void;
@@ -15,11 +15,10 @@ type ProjectStore = {
 };
 
 const EMPTY_PROJECT: Project = {
-  _id: "",
+  id: "",
   name: "",
   description: "",
-  status: "Active",
-  priority: "Low"
+  colorCode: ""
 };
 
 export const useProjectStore = create<ProjectStore>((set) => ({
@@ -27,15 +26,21 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   newProject: EMPTY_PROJECT,
   projectToDelete: "",
 
-  setProjects: (projects) => set({ projects }),
+  setProjects: (projects) => {
+    if (typeof projects === 'function') {
+      set((state) => ({ projects: projects(state.projects) }));
+    } else {
+      set({ projects });
+    }
+  },
   addProject: (project) => set((state) => ({ projects: [...state.projects, project] })),
   updateProject: (project) =>
     set((state) => ({
-      projects: state.projects.map((p) => (p._id === project._id ? project : p)),
+      projects: state.projects.map((p) => (p.id === project.id ? project : p)),
     })),
   deleteProject: (projectId) =>
     set((state) => ({
-      projects: state.projects.filter((p) => p._id !== projectId),
+      projects: state.projects.filter((p) => p.id !== projectId),
     })),
   setProjectToDelete: (projectId) => set({ projectToDelete: projectId }),
   resetNewProject: () => set({ newProject: EMPTY_PROJECT }),
