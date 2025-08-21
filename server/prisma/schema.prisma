@@ -14,9 +14,11 @@ model User {
   password  String
   avatarUrl String?
 
-  projects Project[]       @relation("UserProjects")
-  members  ProjectMember[]
-  tasks    Task[]          @relation("AssignedTasks")
+  projects      Project[]       @relation("UserProjects")
+  members       ProjectMember[]
+  tasks         Task[]          @relation("AssignedTasks")
+  comments      Comment[]       @relation("UserComments")
+  notifications Notification[]  @relation("UserNotifications")
 }
 
 model Project {
@@ -42,6 +44,18 @@ model ProjectMember {
   @@unique([userId, projectId])
 }
 
+model Comment {
+  id        String   @id @default(uuid())
+  content   String
+  createdAt DateTime @default(now())
+
+  // Relations
+  task     Task   @relation(fields: [taskId], references: [id])
+  taskId   String
+  author   User   @relation("UserComments", fields: [authorId], references: [id])
+  authorId String
+}
+
 model Task {
   id          String    @id @default(uuid())
   title       String
@@ -49,10 +63,25 @@ model Task {
   status      String    @default("Todo")
   priority    String    @default("Medium")
   dueDate     DateTime?
+  project     Project   @relation(fields: [projectId], references: [id])
+  projectId   String
+  assignee    User?     @relation("AssignedTasks", fields: [assigneeId], references: [id])
+  assigneeId  String?
 
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 
-  assigneeId String
-  assignee   User   @relation("AssignedTasks", fields: [assigneeId], references: [id])
+  comments Comment[]
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  user      User     @relation("UserNotifications", fields: [userId], references: [id])
+  userId    String
+  type      String // e.g., "task_assigned", "task_updated", "comment", "member_added"
+  title     String
+  message   String?
+  link      String? // optional link (frontend route) for the notification
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
 }
