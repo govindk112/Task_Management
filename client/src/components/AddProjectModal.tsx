@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useProjectStore } from "@/store/useProjectStore";
-import { Project, ProjectStatus, ProjectPriority } from "@/Types/types";
+import { useModalStore } from "@/store/modalStore";
 import {
   Dialog,
   DialogContent,
@@ -13,56 +12,40 @@ import {
 import { Label } from "./ui/label";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectGroup,
-  SelectLabel,
-  SelectItem,
-} from "./ui/select";
 import { Button } from "./ui/button";
-import { useModalStore } from "@/store/modalStore";
 
 export default function AddProjectModal() {
-  const { addProject } = useProjectStore();
   const { isAddProjectModalOpen, setIsAddProjectModalOpen } = useModalStore();
 
   // Form state
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [status, setStatus] = useState<ProjectStatus>("Active");
-  const [priority, setPriority] = useState<ProjectPriority>("Medium");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [owner, setOwner] = useState("");
+  const [colorCode, setColorCode] = useState("#3b82f6"); // default blue
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!name.trim()) return;
+    setLoading(true);
 
-    const newProject: Project = {
-      _id: crypto.randomUUID(),
-      name,
-      description,
-      status,
-      priority,
-      startDate: startDate ? new Date(startDate) : new Date(),
-      endDate: endDate ? new Date(endDate) : undefined,
-      owner: owner || "Unassigned",
-    };
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, description, colorCode }),
+      });
 
-    addProject(newProject);
-    setIsAddProjectModalOpen(false);
-    
-    // Reset form
-    setName("");
-    setDescription("");
-    setStatus("Planning");
-    setPriority("Medium");
-    setStartDate("");
-    setEndDate("");
-    setOwner("");
+      if (!res.ok) throw new Error("Failed to create project");
+
+      // ✅ Close modal & reset form
+      setIsAddProjectModalOpen(false);
+      setName("");
+      setDescription("");
+      setColorCode("#3b82f6");
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -96,80 +79,26 @@ export default function AddProjectModal() {
           </div>
 
           <div>
-            <Label>Status</Label>
-            <Select value={status} onValueChange={(v) => setStatus(v as ProjectStatus)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectLabel>Status</SelectLabel>
-                  <SelectItem value="Planning">Planning</SelectItem>
-                  <SelectItem value="Active">Active</SelectItem>
-                  <SelectItem value="In Progress">In Progress</SelectItem>
-                  <SelectItem value="On Hold">On Hold</SelectItem>
-                  <SelectItem value="Completed">Completed</SelectItem>
-                  <SelectItem value="Cancelled">Cancelled</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <Label>Priority</Label>
-            <Select value={priority} onValueChange={(v) => setPriority(v as ProjectPriority)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select priority" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectLabel>Priority</SelectLabel>
-                  <SelectItem value="Low">Low</SelectItem>
-                  <SelectItem value="Medium">Medium</SelectItem>
-                  <SelectItem value="High">High</SelectItem>
-                  <SelectItem value="Critical">Critical</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <Label htmlFor="startDate">Start Date</Label>
+            <Label htmlFor="colorCode">Project Color</Label>
             <Input
-              id="startDate"
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="endDate">End Date</Label>
-            <Input
-              id="endDate"
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="owner">Owner</Label>
-            <Input
-              id="owner"
-              value={owner}
-              onChange={(e) => setOwner(e.target.value)}
-              placeholder="Enter project owner"
+              id="colorCode"
+              type="color"
+              value={colorCode}
+              onChange={(e) => setColorCode(e.target.value)}
             />
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setIsAddProjectModalOpen(false)}>
+          <Button
+            variant="outline"
+            onClick={() => setIsAddProjectModalOpen(false)}
+            disabled={loading}
+          >
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={!name.trim()}>
-            Add Project
+          <Button onClick={handleSubmit} disabled={!name.trim() || loading}>
+            {loading ? "Adding..." : "Add Project"}
           </Button>
         </DialogFooter>
       </DialogContent>

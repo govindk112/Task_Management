@@ -8,7 +8,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  avatar?: string;
+  avatarUrl?: string;
 }
 
 export type Task = {
@@ -22,13 +22,9 @@ export type Task = {
   assignedUsers: User[]; // <-- Add this
 };
 
-export type Project = {
-  _id: string;
+export interface Project {
+  id: string;
   name: string;
-  priority: ProjectPriority;
   description?: string;
-  startDate?: Date | undefined;
-  endDate?: Date | undefined;
-  owner?: string;  // 🔑 Link with User
-  status: ProjectStatus;
-};
+  colorCode?: string;
+}
