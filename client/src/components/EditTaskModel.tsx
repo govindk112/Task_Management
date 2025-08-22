@@ -35,7 +35,7 @@ const EditDeleteMenu = ({ task }: { task: Task }) => {
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => {
-            setTaskToDelete(task._id);
+            setTaskToDelete(task.id);
             setIsDeleteModalOpen(true);
           }}
         >
