@@ -69,12 +69,6 @@ export default function Login() {
                   <div className="grid gap-3">
                     <div className="flex items-center">
                       <Label htmlFor="password">Password</Label>
-                      <a
-                        href="#"
-                        className="ml-auto text-sm underline-offset-2 hover:underline"
-                      >
-                        Forgot your password?
-                      </a>
                     </div>
                     <Input
                       id="password"
@@ -112,8 +106,8 @@ export default function Login() {
             </CardContent>
           </Card>
           <div className="text-muted-foreground text-center text-xs">
-            By clicking continue, you agree to our <a href="#">Terms of Service</a>{" "}
-            and <a href="#">Privacy Policy</a>.
+            By clicking continue, you agree to our <a href="https://generator.lorem-ipsum.info/terms-and-conditions">Terms of Service</a>{" "}
+            and <a href="https://generator.lorem-ipsum.info/privacy-policy">Privacy Policy</a>.
           </div>
         </div>
       </div>

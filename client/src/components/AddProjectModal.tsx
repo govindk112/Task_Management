@@ -1,4 +1,5 @@
 "use client";
+
 import { useState } from "react";
 import { useModalStore } from "@/store/modalStore";
 import { useProjectStore } from "@/store/useProjectStore";
@@ -13,12 +14,12 @@ import { Label } from "./ui/label";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
-import { toast } from "react-hot-toast"; // For notifications
+import { toast } from "react-hot-toast";
 
 export default function AddProjectModal() {
   const { isAddProjectModalOpen, setIsAddProjectModalOpen } = useModalStore();
-  const { projects, setProjects } = useProjectStore();
-  
+  const { setProjects } = useProjectStore();
+
   // Form state
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -26,70 +27,56 @@ export default function AddProjectModal() {
   const [error, setError] = useState("");
 
   const handleSubmit = async () => {
-  if (!name.trim()) {
-    setError("Project name is required");
-    return;
-  }
-
-  setLoading(true);
-  setError("");
-
-  try {
-    // ✅ API URL
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-    const url = `${apiUrl}/projects`;
-
-    console.log("Request URL:", url);
-
-    // ✅ Get token
-    const token = localStorage.getItem("token");
-    if (!token) {
-      throw new Error("Authentication token not found. Please log in again.");
-    }
-    console.log("Token being used:", token);
-
-    // ✅ Send request
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`, // Prefix only here
-      },
-      body: JSON.stringify({ name, description }),
-    });
-
-    console.log("Response status:", res.status);
-
-    const contentType = res.headers.get("content-type");
-    if (!contentType || !contentType.includes("application/json")) {
-      const text = await res.text();
-      console.error("Non-JSON response:", text);
-      throw new Error(`Server returned ${res.status} with non-JSON response`);
+    if (!name.trim()) {
+      setError("Project name is required");
+      return;
     }
 
-    const data = await res.json();
-    console.log("Response data:", data);
+    setLoading(true);
+    setError("");
 
-    if (!res.ok) {
-      throw new Error(data.error || `Request failed with status ${res.status}`);
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      const token = localStorage.getItem("token");
+
+      if (!token) {
+        throw new Error("Authentication token not found. Please log in again.");
+      }
+
+      const res = await fetch(`${apiUrl}/projects`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name, description }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to create project");
+      }
+
+      // ✅ Some backends wrap response, some don’t — handle both
+      const newProject = data.project || data;
+
+      // ✅ Update Zustand store
+      setProjects((prev: any[]) => [...prev, newProject]);
+
+      toast.success("Project created successfully!");
+      setIsAddProjectModalOpen(false);
+
+      // Reset form
+      setName("");
+      setDescription("");
+    } catch (err: any) {
+      console.error("Error adding project:", err);
+      setError(err.message || "Failed to create project");
+      toast.error(err.message || "Failed to create project");
+    } finally {
+      setLoading(false);
     }
-
-    // ✅ Success
-    setProjects([...projects, data]);
-    toast.success("Project created successfully!");
-    setIsAddProjectModalOpen(false);
-    setName("");
-    setDescription("");
-  } catch (err: any) {
-    console.error("Error:", err);
-    setError(err.message || "Failed to create project");
-    toast.error(err.message || "Failed to create project");
-  } finally {
-    setLoading(false);
-  }
-};
-
-
+  };
 
   return (
     <Dialog open={isAddProjectModalOpen} onOpenChange={setIsAddProjectModalOpen}>
@@ -97,13 +84,13 @@ export default function AddProjectModal() {
         <DialogHeader>
           <DialogTitle>Add New Project</DialogTitle>
         </DialogHeader>
-        
+
         {error && (
           <div className="bg-red-50 text-red-700 p-3 rounded-md mb-4">
             {error}
           </div>
         )}
-        
+
         <div className="space-y-4">
           <div>
             <Label htmlFor="name">Project Name *</Label>
@@ -119,7 +106,7 @@ export default function AddProjectModal() {
               required
             />
           </div>
-          
+
           <div>
             <Label htmlFor="description">Description</Label>
             <Textarea
@@ -131,12 +118,8 @@ export default function AddProjectModal() {
               disabled={loading}
             />
           </div>
-          
-          <div>
-            
-          </div>
         </div>
-        
+
         <DialogFooter>
           <Button
             variant="outline"
@@ -145,10 +128,7 @@ export default function AddProjectModal() {
           >
             Cancel
           </Button>
-          <Button 
-            onClick={handleSubmit} 
-            disabled={!name.trim() || loading}
-          >
+          <Button onClick={handleSubmit} disabled={!name.trim() || loading}>
             {loading ? "Adding..." : "Add Project"}
           </Button>
         </DialogFooter>

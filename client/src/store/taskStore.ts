@@ -30,13 +30,14 @@ export const useTaskStore = create<State & Actions>((set, get) => ({
   setTaskToEdit: (task) => set({ taskToEdit: task }),
   addTask: (task) => set((state) => ({ tasks: [...state.tasks, task] })),
   updateTask: (task) =>
-    set((state) => ({
-      tasks: state.tasks.map((t) => (t._id === task._id ? task : t)),
-    })),
-  deleteTask: (taskId) =>
-    set((state) => ({
-      tasks: state.tasks.filter((task) => task._id !== taskId),
-    })),
+  set((state) => ({
+    tasks: state.tasks.map((t) => (t.id === task.id ? task : t)),
+  })),
+deleteTask: (taskId) =>
+  set((state) => ({
+    tasks: state.tasks.filter((task) => task.id !== taskId),
+  })),
+
   setTaskToDelete: (taskId) => set({ taskToDelete: taskId }),
   resetTaskToEdit: () => set({ taskToEdit: null }),
 

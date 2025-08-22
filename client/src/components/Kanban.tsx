@@ -146,7 +146,7 @@ const Kanban: React.FC<KanbanProps> = ({ projectId }) => {
                               {task.dueDate && (
                                 <div className="flex items-center text-xs text-gray-500 dark:text-gray-400">
                                   <Calendar className="h-4 w-4 mr-1" />
-                                  {format(new Date(task.dueDate), "MMM d, yyyy")}
+                                  {task.dueDate}
                                 </div>
                               )}
                               <div className="flex gap-1 mt-2">
