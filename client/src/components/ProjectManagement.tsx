@@ -54,6 +54,7 @@ export default function ProjectManagement() {
   // Filter state
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string | null>(null);
+  const [isFilterExpanded, setIsFilterExpanded] = useState(false);
 
   // Helper function to get status from color code
   const getStatusFromColor = (colorCode?: string): string => {
@@ -146,6 +147,11 @@ export default function ProjectManagement() {
     
     return matchesSearch && matchesStatus;
   });
+
+  // Get unique colors from projects for filter dropdown
+  const uniqueColors = Array.from(
+    new Set(projects.map(project => project.colorCode).filter(Boolean))
+  ) as string[];
 
   // Handle project update with validation
   const handleUpdateProject = useCallback(async () => {
@@ -332,11 +338,16 @@ export default function ProjectManagement() {
     setFilterStatus(null);
   }, []);
 
+  // Toggle filter expansion on mobile
+  const toggleFilterExpansion = useCallback(() => {
+    setIsFilterExpanded(!isFilterExpanded);
+  }, [isFilterExpanded]);
+
   return (
-    <div className="container mx-auto py-8 px-4">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-        <h1 className="text-3xl font-bold">Project Management</h1>
-        <Button onClick={openAddModal} disabled={isLoading}>
+    <div className="container mx-auto py-6 px-4 sm:px-6 lg:px-8">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+        <h1 className="text-2xl sm:text-3xl font-bold">Project Management</h1>
+        <Button onClick={openAddModal} disabled={isLoading} className="w-full sm:w-auto">
           <Plus className="w-4 h-4 mr-2" />
           New Project
         </Button>
@@ -348,26 +359,37 @@ export default function ProjectManagement() {
         </div>
       )}
       
-      {/* Filter Section */}
+      {/* Filter Section - Responsive */}
       <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow mb-6">
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1">
+        {/* Mobile Filter Toggle */}
+        <div className="sm:hidden mb-3">
+          <Button 
+            variant="outline" 
+            onClick={toggleFilterExpansion}
+            className="w-full flex justify-between items-center"
+          >
+            <span>Filters</span>
+            <X className={`w-4 h-4 transform transition-transform ${isFilterExpanded ? 'rotate-180' : ''}`} />
+          </Button>
+        </div>
+        
+        {/* Filter Controls - Hidden on mobile when collapsed */}
+        <div className={`${isFilterExpanded ? 'block' : 'hidden'} sm:block`}>
+          <div className="flex flex-col gap-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <Input
                 type="text"
                 placeholder="Search projects by name or description..."
-                className="pl-10"
+                className="pl-10 w-full"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-          </div>
-          
-          <div className="flex gap-3">
-            <div>
+            
+            <div className="flex flex-col sm:flex-row gap-3">
               <select
-                className="w-full md:w-40 p-2 border rounded focus:ring-primary focus:border-primary"
+                className="w-full p-2 border rounded focus:ring-primary focus:border-primary"
                 value={filterStatus || ""}
                 onChange={(e) => setFilterStatus(e.target.value || null)}
               >
@@ -378,49 +400,50 @@ export default function ProjectManagement() {
                   </option>
                 ))}
               </select>
+              
+              <Button 
+                variant="outline" 
+                onClick={clearFilters}
+                disabled={!searchQuery && !filterStatus}
+                className="w-full sm:w-auto"
+              >
+                Clear Filters
+              </Button>
             </div>
-            
-            <Button 
-              variant="outline" 
-              onClick={clearFilters}
-              disabled={!searchQuery && !filterStatus}
-            >
-              Clear Filters
-            </Button>
           </div>
+          
+          {/* Active filters display */}
+          {(searchQuery || filterStatus) && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {searchQuery && (
+                <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm flex items-center">
+                  Search: "{searchQuery}"
+                  <button 
+                    onClick={() => setSearchQuery("")}
+                    className="ml-2 text-blue-800 hover:text-blue-900"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+              {filterStatus && (
+                <div className="flex items-center gap-1 bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
+                  <span 
+                    className="w-3 h-3 rounded-full border" 
+                    style={{ backgroundColor: getColorHexFromStatus(filterStatus) }} 
+                  />
+                  Status: {filterStatus}
+                  <button 
+                    onClick={() => setFilterStatus(null)}
+                    className="ml-1 text-blue-800 hover:text-blue-900"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
-        
-        {/* Active filters display */}
-        {(searchQuery || filterStatus) && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {searchQuery && (
-              <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm flex items-center">
-                Search: "{searchQuery}"
-                <button 
-                  onClick={() => setSearchQuery("")}
-                  className="ml-2 text-blue-800 hover:text-blue-900"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </div>
-            )}
-            {filterStatus && (
-              <div className="flex items-center gap-1 bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
-                <span 
-                  className="w-3 h-3 rounded-full border" 
-                  style={{ backgroundColor: getColorHexFromStatus(filterStatus) }} 
-                />
-                Status: {filterStatus}
-                <button 
-                  onClick={() => setFilterStatus(null)}
-                  className="ml-1 text-blue-800 hover:text-blue-900"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </div>
-            )}
-          </div>
-        )}
       </div>
       
       {isLoading ? (
@@ -449,46 +472,53 @@ export default function ProjectManagement() {
           <div className="mb-4 text-sm text-gray-600">
             Showing {filteredProjects.length} of {projects.length} projects
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {filteredProjects.map((project) => {
               const projectStatus = getStatusFromColor(project.colorCode);
               const statusColor = getColorHexFromStatus(projectStatus);
               
               return (
-                <Link key={project.id} href={`/TaskManager?projectId=${project.id}`} className="block relative">
-                  <Card className="hover:shadow-lg transition-shadow cursor-pointer hover:border-primary">
-                    <CardHeader>
-                      <CardTitle>{project.name}</CardTitle>
-                      <CardDescription>{project.description || "No description"}</CardDescription>
-                      
-                      <div className="absolute top-2 right-2 flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            openEditModal(project);
-                          }}
-                          aria-label="Edit project"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </Button>
-                        
-                        <Button
-                          variant="destructive"
-                          size="icon"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            handleDeleteProject(project.id);
-                          }}
-                          aria-label="Delete project"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                <Link key={project.id} href={`/TaskManager?projectId=${project.id}`} className="block">
+                  <Card className="hover:shadow-lg transition-shadow cursor-pointer hover:border-primary h-full flex flex-col">
+                    <CardHeader className="pb-3 flex-grow">
+                      <div className="flex justify-between items-start">
+                        <div className="pr-8">
+                          <CardTitle className="text-lg sm:text-xl mb-1">{project.name}</CardTitle>
+                          <CardDescription className="text-sm sm:text-base">
+                            {project.description || "No description"}
+                          </CardDescription>
+                        </div>
+                        <div className="flex gap-1 sm:gap-2">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8 sm:h-9 sm:w-9"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              openEditModal(project);
+                            }}
+                            aria-label="Edit project"
+                          >
+                            <Edit2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                          </Button>
+                          
+                          <Button
+                            variant="destructive"
+                            size="icon"
+                            className="h-8 w-8 sm:h-9 sm:w-9"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              handleDeleteProject(project.id);
+                            }}
+                            aria-label="Delete project"
+                          >
+                            <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                          </Button>
+                        </div>
                       </div>
                     </CardHeader>
                     
-                    <CardContent>
+                    <CardContent className="pt-0">
                       <div className="flex items-center gap-2">
                         <span 
                           className="w-4 h-4 rounded-full border" 
@@ -506,7 +536,7 @@ export default function ProjectManagement() {
         </>
       )}
       
-      {/* Add Project Modal */}
+      {/* Add Project Modal - Responsive */}
       {isAddProjectModalOpen && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4"
@@ -515,7 +545,7 @@ export default function ProjectManagement() {
           aria-labelledby="add-project-title"
           onClick={(e) => e.target === e.currentTarget && closeAddModal()}
         >
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg w-full max-w-md relative">
+          <div className="bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-lg w-full max-w-md relative">
             <Button
               variant="ghost"
               size="icon"
@@ -583,27 +613,28 @@ export default function ProjectManagement() {
               </div>
             </div>
             
-            <div className="mt-6 flex gap-3">
+            <div className="mt-6 flex flex-col sm:flex-row gap-3">
               <Button 
-                className="flex-1" 
-                onClick={handleAddProject}
-                disabled={isLoading || !newProjectName.trim()}
-              >
-                {isLoading ? "Creating..." : "Create Project"}
-              </Button>
-              <Button 
-                variant="outline" 
+                className="flex-1 order-2 sm:order-1" 
+                variant="outline"
                 onClick={closeAddModal}
                 disabled={isLoading}
               >
                 Cancel
+              </Button>
+              <Button 
+                className="flex-1 order-1 sm:order-2" 
+                onClick={handleAddProject}
+                disabled={isLoading || !newProjectName.trim()}
+              >
+                {isLoading ? "Creating..." : "Create Project"}
               </Button>
             </div>
           </div>
         </div>
       )}
       
-      {/* Edit Project Modal */}
+      {/* Edit Project Modal - Responsive */}
       {editProject && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4"
@@ -612,7 +643,7 @@ export default function ProjectManagement() {
           aria-labelledby="edit-project-title"
           onClick={(e) => e.target === e.currentTarget && closeEditModal()}
         >
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg w-full max-w-md relative">
+          <div className="bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-lg w-full max-w-md relative">
             <Button
               variant="ghost"
               size="icon"
@@ -680,20 +711,21 @@ export default function ProjectManagement() {
               </div>
             </div>
             
-            <div className="mt-6 flex gap-3">
+            <div className="mt-6 flex flex-col sm:flex-row gap-3">
               <Button 
-                className="flex-1" 
-                onClick={handleUpdateProject}
-                disabled={isLoading || !editName.trim()}
-              >
-                {isLoading ? "Saving..." : "Save Changes"}
-              </Button>
-              <Button 
-                variant="outline" 
+                className="flex-1 order-2 sm:order-1" 
+                variant="outline"
                 onClick={closeEditModal}
                 disabled={isLoading}
               >
                 Cancel
+              </Button>
+              <Button 
+                className="flex-1 order-1 sm:order-2" 
+                onClick={handleUpdateProject}
+                disabled={isLoading || !editName.trim()}
+              >
+                {isLoading ? "Saving..." : "Save Changes"}
               </Button>
             </div>
           </div>
