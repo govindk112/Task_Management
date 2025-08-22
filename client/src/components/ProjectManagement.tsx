@@ -24,6 +24,13 @@ interface Project {
   colorCode?: string;
 }
 
+// Status options with colors and meanings
+const statusOptions = [
+  { value: "To Do", color: "red", hex: "#ef4444" },
+  { value: "In Progress", color: "yellow", hex: "#eab308" },
+  { value: "Complete", color: "green", hex: "#22c55e" }
+];
+
 export default function ProjectManagement() {
   const router = useRouter();
   const { projects, setProjects } = useProjectStore();
@@ -37,16 +44,29 @@ export default function ProjectManagement() {
   const [editProject, setEditProject] = useState<Project | null>(null);
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
-  const [editColor, setEditColor] = useState("#3b82f6"); // Default color
+  const [editStatus, setEditStatus] = useState("To Do"); // Default status
   
   // Add project state
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectDescription, setNewProjectDescription] = useState("");
-  const [newProjectColor, setNewProjectColor] = useState("#3b82f6"); // Default color
+  const [newProjectStatus, setNewProjectStatus] = useState("To Do"); // Default status
   
   // Filter state
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterColor, setFilterColor] = useState<string | null>(null);
+  const [filterStatus, setFilterStatus] = useState<string | null>(null);
+
+  // Helper function to get status from color code
+  const getStatusFromColor = (colorCode?: string): string => {
+    if (!colorCode) return "To Do";
+    const option = statusOptions.find(opt => opt.hex === colorCode);
+    return option ? option.value : "To Do";
+  };
+
+  // Helper function to get color hex from status
+  const getColorHexFromStatus = (status: string): string => {
+    const option = statusOptions.find(opt => opt.value === status);
+    return option ? option.hex : "#ef4444"; // Default to red
+  };
 
   // Fetch projects with useCallback
   const fetchProjects = useCallback(async () => {
@@ -115,21 +135,17 @@ export default function ProjectManagement() {
     hasMounted.current = true;
   }, [isAddProjectModalOpen, fetchProjects]);
 
-  // Filter projects based on search query and color
+  // Filter projects based on search query and status
   const filteredProjects = projects.filter((project) => {
     const matchesSearch = 
       project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (project.description && project.description.toLowerCase().includes(searchQuery.toLowerCase()));
     
-    const matchesColor = filterColor ? project.colorCode === filterColor : true;
+    const projectStatus = getStatusFromColor(project.colorCode);
+    const matchesStatus = filterStatus ? projectStatus === filterStatus : true;
     
-    return matchesSearch && matchesColor;
+    return matchesSearch && matchesStatus;
   });
-
-  // Get unique colors from projects for filter dropdown
-  const uniqueColors = Array.from(
-    new Set(projects.map(project => project.colorCode).filter(Boolean))
-  ) as string[];
 
   // Handle project update with validation
   const handleUpdateProject = useCallback(async () => {
@@ -160,7 +176,7 @@ export default function ProjectManagement() {
         body: JSON.stringify({
           name: editName,
           description: editDescription,
-          colorCode: editColor,
+          colorCode: getColorHexFromStatus(editStatus),
         }),
       });
       
@@ -176,7 +192,7 @@ export default function ProjectManagement() {
       setProjects((prev: Project[]) =>
         prev.map((p: Project) => 
           p.id === editProject.id 
-            ? { ...p, name: editName, description: editDescription, colorCode: editColor } 
+            ? { ...p, name: editName, description: editDescription, colorCode: getColorHexFromStatus(editStatus) } 
             : p
         )
       );
@@ -188,7 +204,7 @@ export default function ProjectManagement() {
     } finally {
       setIsLoading(false);
     }
-  }, [editName, editDescription, editColor, editProject, router, setProjects]);
+  }, [editName, editDescription, editStatus, editProject, router, setProjects]);
 
   // Handle project deletion
   const handleDeleteProject = useCallback(async (projectId: string) => {
@@ -254,7 +270,7 @@ export default function ProjectManagement() {
         body: JSON.stringify({
           name: newProjectName,
           description: newProjectDescription,
-          colorCode: newProjectColor,
+          colorCode: getColorHexFromStatus(newProjectStatus),
         }),
       });
       
@@ -269,7 +285,7 @@ export default function ProjectManagement() {
       // Reset form and close modal
       setNewProjectName("");
       setNewProjectDescription("");
-      setNewProjectColor("#3b82f6");
+      setNewProjectStatus("To Do");
       setIsAddProjectModalOpen(false);
       
       // Projects will be refetched when modal closes due to useEffect
@@ -279,14 +295,14 @@ export default function ProjectManagement() {
     } finally {
       setIsLoading(false);
     }
-  }, [newProjectName, newProjectDescription, newProjectColor, router, setIsAddProjectModalOpen]);
+  }, [newProjectName, newProjectDescription, newProjectStatus, router, setIsAddProjectModalOpen]);
 
   // Open edit modal with project data
   const openEditModal = useCallback((project: Project) => {
     setEditProject(project);
     setEditName(project.name);
     setEditDescription(project.description || "");
-    setEditColor(project.colorCode || "#3b82f6");
+    setEditStatus(getStatusFromColor(project.colorCode));
   }, []);
 
   // Close edit modal
@@ -301,7 +317,7 @@ export default function ProjectManagement() {
     setError(null);
     setNewProjectName("");
     setNewProjectDescription("");
-    setNewProjectColor("#3b82f6");
+    setNewProjectStatus("To Do");
   }, [setIsAddProjectModalOpen]);
 
   // Open add project modal
@@ -313,7 +329,7 @@ export default function ProjectManagement() {
   // Clear all filters
   const clearFilters = useCallback(() => {
     setSearchQuery("");
-    setFilterColor(null);
+    setFilterStatus(null);
   }, []);
 
   return (
@@ -352,13 +368,13 @@ export default function ProjectManagement() {
             <div>
               <select
                 className="w-full md:w-40 p-2 border rounded focus:ring-primary focus:border-primary"
-                value={filterColor || ""}
-                onChange={(e) => setFilterColor(e.target.value || null)}
+                value={filterStatus || ""}
+                onChange={(e) => setFilterStatus(e.target.value || null)}
               >
-                <option value="">All Colors</option>
-                {uniqueColors.map((color) => (
-                  <option key={color} value={color}>
-                    {color}
+                <option value="">All Statuses</option>
+                {statusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.value}
                   </option>
                 ))}
               </select>
@@ -367,7 +383,7 @@ export default function ProjectManagement() {
             <Button 
               variant="outline" 
               onClick={clearFilters}
-              disabled={!searchQuery && !filterColor}
+              disabled={!searchQuery && !filterStatus}
             >
               Clear Filters
             </Button>
@@ -375,7 +391,7 @@ export default function ProjectManagement() {
         </div>
         
         {/* Active filters display */}
-        {(searchQuery || filterColor) && (
+        {(searchQuery || filterStatus) && (
           <div className="mt-3 flex flex-wrap gap-2">
             {searchQuery && (
               <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm flex items-center">
@@ -388,15 +404,15 @@ export default function ProjectManagement() {
                 </button>
               </div>
             )}
-            {filterColor && (
+            {filterStatus && (
               <div className="flex items-center gap-1 bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
                 <span 
                   className="w-3 h-3 rounded-full border" 
-                  style={{ backgroundColor: filterColor }} 
+                  style={{ backgroundColor: getColorHexFromStatus(filterStatus) }} 
                 />
-                Color: {filterColor}
+                Status: {filterStatus}
                 <button 
-                  onClick={() => setFilterColor(null)}
+                  onClick={() => setFilterStatus(null)}
                   className="ml-1 text-blue-800 hover:text-blue-900"
                 >
                   <X className="w-3 h-3" />
@@ -434,55 +450,58 @@ export default function ProjectManagement() {
             Showing {filteredProjects.length} of {projects.length} projects
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredProjects.map((project) => (
-              <Link key={project.id} href={`/TaskManager?projectId=${project.id}`} className="block relative">
-                <Card className="hover:shadow-lg transition-shadow cursor-pointer hover:border-primary">
-                  <CardHeader>
-                    <CardTitle>{project.name}</CardTitle>
-                    <CardDescription>{project.description || "No description"}</CardDescription>
-                    
-                    <div className="absolute top-2 right-2 flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          openEditModal(project);
-                        }}
-                        aria-label="Edit project"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </Button>
+            {filteredProjects.map((project) => {
+              const projectStatus = getStatusFromColor(project.colorCode);
+              const statusColor = getColorHexFromStatus(projectStatus);
+              
+              return (
+                <Link key={project.id} href={`/TaskManager?projectId=${project.id}`} className="block relative">
+                  <Card className="hover:shadow-lg transition-shadow cursor-pointer hover:border-primary">
+                    <CardHeader>
+                      <CardTitle>{project.name}</CardTitle>
+                      <CardDescription>{project.description || "No description"}</CardDescription>
                       
-                      <Button
-                        variant="destructive"
-                        size="icon"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          handleDeleteProject(project.id);
-                        }}
-                        aria-label="Delete project"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </CardHeader>
-                  
-                  <CardContent>
-                    {project.colorCode && (
+                      <div className="absolute top-2 right-2 flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            openEditModal(project);
+                          }}
+                          aria-label="Edit project"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </Button>
+                        
+                        <Button
+                          variant="destructive"
+                          size="icon"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            handleDeleteProject(project.id);
+                          }}
+                          aria-label="Delete project"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    
+                    <CardContent>
                       <div className="flex items-center gap-2">
                         <span 
                           className="w-4 h-4 rounded-full border" 
-                          style={{ backgroundColor: project.colorCode }} 
+                          style={{ backgroundColor: statusColor }} 
                           aria-hidden="true"
                         />
-                        <p className="text-sm text-gray-600">Project Color</p>
+                        <p className="text-sm text-gray-600">{projectStatus}</p>
                       </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
           </div>
         </>
       )}
@@ -546,19 +565,21 @@ export default function ProjectManagement() {
               </div>
               
               <div>
-                <label htmlFor="new-project-color" className="block text-sm font-medium mb-1">
-                  Project Color
+                <label htmlFor="new-project-status" className="block text-sm font-medium mb-1">
+                  Status
                 </label>
-                <div className="flex items-center gap-3">
-                  <input
-                    id="new-project-color"
-                    type="color"
-                    className="w-12 h-10 border rounded cursor-pointer"
-                    value={newProjectColor}
-                    onChange={(e) => setNewProjectColor(e.target.value)}
-                  />
-                  <span className="text-sm text-gray-600">{newProjectColor}</span>
-                </div>
+                <select
+                  id="new-project-status"
+                  className="w-full p-2 border rounded focus:ring-primary focus:border-primary"
+                  value={newProjectStatus}
+                  onChange={(e) => setNewProjectStatus(e.target.value)}
+                >
+                  {statusOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.value}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             
@@ -641,19 +662,21 @@ export default function ProjectManagement() {
               </div>
               
               <div>
-                <label htmlFor="project-color" className="block text-sm font-medium mb-1">
-                  Project Color
+                <label htmlFor="project-status" className="block text-sm font-medium mb-1">
+                  Status
                 </label>
-                <div className="flex items-center gap-3">
-                  <input
-                    id="project-color"
-                    type="color"
-                    className="w-12 h-10 border rounded cursor-pointer"
-                    value={editColor}
-                    onChange={(e) => setEditColor(e.target.value)}
-                  />
-                  <span className="text-sm text-gray-600">{editColor}</span>
-                </div>
+                <select
+                  id="project-status"
+                  className="w-full p-2 border rounded focus:ring-primary focus:border-primary"
+                  value={editStatus}
+                  onChange={(e) => setEditStatus(e.target.value)}
+                >
+                  {statusOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.value}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             
