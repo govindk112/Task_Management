@@ -14,7 +14,13 @@ import userRoutes from "./routes/user.routes.js";
 dotenv.config();
 
 const app = express();
-app.use(cors());
+const corsOptions = {
+  origin: 'http://localhost:3000', // Allow only your frontend origin
+  credentials: true, // Allow credentials (cookies, etc.)
+  optionsSuccessStatus: 200 // Some legacy browsers choke on 204
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use("/comments", commentRoutes);
 app.use("/notifications", notificationRoutes);
