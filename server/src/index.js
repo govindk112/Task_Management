@@ -26,14 +26,16 @@ app.use("/comments", commentRoutes);
 app.use("/notifications", notificationRoutes);
 app.use("/users", userRoutes);
 
-
+app.listen(5000, () => {
+  console.log("Server running on http://localhost:5000");
+});
 
 app.use("/auth", authRoutes);
 app.use("/projects", projectRoutes);
 // Mount tasks routes at root so nested paths work:
 // - /projects/:projectId/tasks
 // - /tasks/:taskId
-app.use("/", taskRoutes); // <-- add this
+app.use("/projects", taskRoutes); // <-- add this
 
 
 const PORT = process.env.PORT || 5000;

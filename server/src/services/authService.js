@@ -9,11 +9,18 @@ export async function registerUser({ name, email, password }) {
   if (existing) throw new Error("User already exists");
 
   const hashed = await bcrypt.hash(password, 10);
+
+  // 👇 Always create registered users with role USER
   const user = await prisma.user.create({
-    data: { name, email, password: hashed },
+    data: { name, email, password: hashed, role: "USER" },
   });
 
-  const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: "1h" });
+  const token = jwt.sign(
+    { userId: user.id, email: user.email, role: user.role },
+    JWT_SECRET,
+    { expiresIn: "1d" }
+  );
+
   return { token, user };
 }
 
@@ -23,6 +30,11 @@ export async function loginUser({ email, password }) {
     throw new Error("Invalid credentials");
   }
 
-  const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: "1h" });
+  const token = jwt.sign(
+    { userId: user.id, email: user.email, role: user.role },
+    JWT_SECRET,
+    { expiresIn: "1d" }
+  );
+
   return { token, user };
 }

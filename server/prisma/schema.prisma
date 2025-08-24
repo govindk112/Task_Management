@@ -6,6 +6,10 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+enum Role {
+  ADMIN
+  USER
+}
 
 model User {
   id        String  @id @default(uuid())
@@ -14,12 +18,15 @@ model User {
   password  String
   avatarUrl String?
 
+  role      Role   @default(USER)
+
   projects      Project[]       @relation("UserProjects")
   members       ProjectMember[]
   tasks         Task[]          @relation("AssignedTasks")
   comments      Comment[]       @relation("UserComments")
   notifications Notification[]  @relation("UserNotifications")
 }
+
 
 model Project {
   id          String  @id @default(uuid())
