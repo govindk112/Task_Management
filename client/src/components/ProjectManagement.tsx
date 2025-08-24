@@ -15,6 +15,14 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 
 // Define TypeScript interfaces
 interface Project {
@@ -55,6 +63,11 @@ export default function ProjectManagement() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string | null>(null);
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(6); // Default for desktop
+  const [windowWidth, setWindowWidth] = useState(0);
 
   // Helper function to get status from color code
   const getStatusFromColor = (colorCode?: string): string => {
@@ -136,6 +149,36 @@ export default function ProjectManagement() {
     hasMounted.current = true;
   }, [isAddProjectModalOpen, fetchProjects]);
 
+  // Handle window resize to adjust items per page
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowWidth(window.innerWidth);
+      
+      // Adjust items per page based on screen size
+      if (window.innerWidth < 640) {
+        setItemsPerPage(2); // Mobile: 2 items per page
+      } else if (window.innerWidth < 1024) {
+        setItemsPerPage(4); // Tablet: 4 items per page
+      } else {
+        setItemsPerPage(6); // Desktop: 6 items per page
+      }
+    };
+
+    // Set initial window width
+    handleResize();
+    
+    // Add event listener
+    window.addEventListener('resize', handleResize);
+    
+    // Clean up
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, filterStatus, projects]);
+
   // Filter projects based on search query and status
   const filteredProjects = projects.filter((project) => {
     const matchesSearch = 
@@ -147,6 +190,12 @@ export default function ProjectManagement() {
     
     return matchesSearch && matchesStatus;
   });
+
+  // Calculate pagination values
+  const totalPages = Math.ceil(filteredProjects.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentProjects = filteredProjects.slice(startIndex, endIndex);
 
   // Get unique colors from projects for filter dropdown
   const uniqueColors = Array.from(
@@ -343,6 +392,58 @@ export default function ProjectManagement() {
     setIsFilterExpanded(!isFilterExpanded);
   }, [isFilterExpanded]);
 
+  // Handle page change
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    // Scroll to top of projects section
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Generate page numbers for pagination
+  const getPageNumbers = () => {
+    const pages = [];
+    const maxVisiblePages = 5; // Maximum page numbers to show
+    
+    if (totalPages <= maxVisiblePages) {
+      // Show all pages if total is less than max visible
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      // Always show first page
+      pages.push(1);
+      
+      // Calculate start and end of visible pages
+      let start = Math.max(2, currentPage - Math.floor(maxVisiblePages / 2));
+      let end = Math.min(totalPages - 1, start + maxVisiblePages - 3);
+      
+      // Adjust start if end is too close to the end
+      if (end === totalPages - 1) {
+        start = Math.max(2, end - maxVisiblePages + 3);
+      }
+      
+      // Add ellipsis if needed
+      if (start > 2) {
+        pages.push('...');
+      }
+      
+      // Add visible pages
+      for (let i = start; i <= end; i++) {
+        pages.push(i);
+      }
+      
+      // Add ellipsis if needed
+      if (end < totalPages - 1) {
+        pages.push('...');
+      }
+      
+      // Always show last page
+      pages.push(totalPages);
+    }
+    
+    return pages;
+  };
+
   return (
     <div className="container mx-auto py-6 px-4 sm:px-6 lg:px-8">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
@@ -469,11 +570,17 @@ export default function ProjectManagement() {
         </div>
       ) : (
         <>
-          <div className="mb-4 text-sm text-gray-600">
-            Showing {filteredProjects.length} of {projects.length} projects
+          <div className="mb-4 text-sm text-gray-600 flex justify-between items-center">
+            <span>
+              Showing {startIndex + 1}-{Math.min(endIndex, filteredProjects.length)} of {filteredProjects.length} projects
+            </span>
+            <span className="text-xs">
+              {windowWidth < 640 ? "2 per page" : windowWidth < 1024 ? "4 per page" : "6 per page"}
+            </span>
           </div>
+          
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-            {filteredProjects.map((project) => {
+            {currentProjects.map((project) => {
               const projectStatus = getStatusFromColor(project.colorCode);
               const statusColor = getColorHexFromStatus(projectStatus);
               
@@ -533,6 +640,44 @@ export default function ProjectManagement() {
               );
             })}
           </div>
+          
+          {/* Pagination - Only show if there's more than one page */}
+          {totalPages > 1 && (
+            <div className="mt-8 flex justify-center">
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious 
+                      onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+                      className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                    />
+                  </PaginationItem>
+                  
+                  {getPageNumbers().map((page, index) => (
+                    <PaginationItem key={index}>
+                      {page === '...' ? (
+                        <span className="px-3 py-2">...</span>
+                      ) : (
+                        <PaginationLink 
+                          onClick={() => handlePageChange(page as number)}
+                          isActive={currentPage === page}
+                        >
+                          {page}
+                        </PaginationLink>
+                      )}
+                    </PaginationItem>
+                  ))}
+                  
+                  <PaginationItem>
+                    <PaginationNext 
+                      onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
+                      className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
         </>
       )}
       

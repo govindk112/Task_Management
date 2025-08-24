@@ -14,7 +14,15 @@ import { Task, TaskStatus } from "@/Types/types";
 import EditDeleteMenu from "./EditTaskModel";
 import { Badge } from "./ui/badge";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "./ui/card";
-import { CalendarDays, Users, MoreVertical, ArrowUpDown } from "lucide-react";
+import { CalendarDays, Users, MoreVertical, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "./ui/pagination";
 
 interface TasklistProps {
   projectId: string;
@@ -28,6 +36,10 @@ const Tasklist: React.FC<TasklistProps> = ({ projectId }) => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [sortBy, setSortBy] = useState("none");
+  
+  // Pagination state for mobile view
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(2); // 2 tasks per page on mobile
 
   useEffect(() => {
     const fetchTasks = async () => {
@@ -52,6 +64,11 @@ const Tasklist: React.FC<TasklistProps> = ({ projectId }) => {
       fetchTasks();
     }
   }, [projectId, setTasks]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter, priorityFilter, sortBy, sortOrder, projectId]);
 
   // Handle updating task status on backend
   const handleStatusChange = async (task: Task, newStatus: TaskStatus) => {
@@ -85,7 +102,7 @@ const Tasklist: React.FC<TasklistProps> = ({ projectId }) => {
       (statusFilter === "all" || task.status === statusFilter) &&
       (priorityFilter === "all" || task.priority === priorityFilter)
   );
-
+  
   // sorting
   const sortedTasks = [...filteredTasks].sort((a, b) => {
     if (sortBy === "title")
@@ -107,6 +124,19 @@ const Tasklist: React.FC<TasklistProps> = ({ projectId }) => {
     }
     return 0;
   });
+
+  // Pagination for mobile view
+  const totalPages = Math.ceil(sortedTasks.length / itemsPerPage);
+  const indexOfLastTask = currentPage * itemsPerPage;
+  const indexOfFirstTask = indexOfLastTask - itemsPerPage;
+  const currentTasks = sortedTasks.slice(indexOfFirstTask, indexOfLastTask);
+
+  // Handle page change
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    // Scroll to top of task list
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Get priority color
   const getPriorityColor = (priority: string) => {
@@ -199,73 +229,113 @@ const Tasklist: React.FC<TasklistProps> = ({ projectId }) => {
             No tasks found
           </div>
         ) : (
-          sortedTasks.map((task) => (
-            <Card key={task._id || Math.random()} className="overflow-hidden">
-              <CardHeader className="pb-3">
-                <div className="flex justify-between items-start">
-                  <CardTitle className="text-lg">{task.title}</CardTitle>
-                  <EditDeleteMenu task={task} />
-                </div>
-                {task.description && (
-                  <CardDescription className="mt-1">
-                    {task.description}
-                  </CardDescription>
-                )}
-              </CardHeader>
-              
-              <CardContent className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <CalendarDays className="h-4 w-4 text-gray-500" />
-                  <span className="text-sm">
-                    {task.dueDate ? format(new Date(task.dueDate), "MMM d, yyyy") : "No Due Date"}
-                  </span>
-                </div>
-                
-                <div className="flex flex-wrap gap-2">
-                  <Badge className={getPriorityColor(task.priority)}>
-                    {task.priority}
-                  </Badge>
-                  
-                  <Badge className={getStatusColor(task.status)}>
-                    {task.status}
-                  </Badge>
-                </div>
-                
-                <div className="flex items-center gap-2">
-                  <Users className="h-4 w-4 text-gray-500" />
-                  <div className="flex flex-wrap gap-1">
-                    {task.assignedUsers?.map(user => (
-                      <Badge key={user.id} variant="outline" className="text-xs">
-                        {user.name}
-                      </Badge>
-                    ))}
-                    {(!task.assignedUsers || task.assignedUsers.length === 0) && (
-                      <Badge variant="outline" className="text-xs">Unassigned</Badge>
-                    )}
+          <>
+            <div className="mb-2 text-sm text-gray-600">
+              Showing {indexOfFirstTask + 1}-{Math.min(indexOfLastTask, sortedTasks.length)} of {sortedTasks.length} tasks
+            </div>
+            
+            {currentTasks.map((task) => (
+              <Card key={task._id || Math.random()} className="overflow-hidden">
+                <CardHeader className="pb-3">
+                  <div className="flex justify-between items-start">
+                    <CardTitle className="text-lg">{task.title}</CardTitle>
+                    <EditDeleteMenu task={task} />
                   </div>
-                </div>
-              </CardContent>
-              
-              <CardFooter className="pt-3 border-t">
-                <Select
-                  value={task.status}
-                  onValueChange={(value) => handleStatusChange(task, value as TaskStatus)}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Change Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectLabel>Status</SelectLabel>
-                      <SelectItem value="To Do">To Do</SelectItem>
-                      <SelectItem value="In Progress">In Progress</SelectItem>
-                      <SelectItem value="Completed">Completed</SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </CardFooter>
-            </Card>
-          ))
+                  {task.description && (
+                    <CardDescription className="mt-1">
+                      {task.description}
+                    </CardDescription>
+                  )}
+                </CardHeader>
+                
+                <CardContent className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <CalendarDays className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm">
+                      {task.dueDate ? format(new Date(task.dueDate), "MMM d, yyyy") : "No Due Date"}
+                    </span>
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-2">
+                    <Badge className={getPriorityColor(task.priority)}>
+                      {task.priority}
+                    </Badge>
+                    
+                    <Badge className={getStatusColor(task.status)}>
+                      {task.status}
+                    </Badge>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4 text-gray-500" />
+                    <div className="flex flex-wrap gap-1">
+                      {task.assignedUsers?.map(user => (
+                        <Badge key={user.id} variant="outline" className="text-xs">
+                          {user.name}
+                        </Badge>
+                      ))}
+                      {(!task.assignedUsers || task.assignedUsers.length === 0) && (
+                        <Badge variant="outline" className="text-xs">Unassigned</Badge>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+                
+                <CardFooter className="pt-3 border-t">
+                  <Select
+                    value={task.status}
+                    onValueChange={(value) => handleStatusChange(task, value as TaskStatus)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Change Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectLabel>Status</SelectLabel>
+                        <SelectItem value="To Do">To Do</SelectItem>
+                        <SelectItem value="In Progress">In Progress</SelectItem>
+                        <SelectItem value="Completed">Completed</SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </CardFooter>
+              </Card>
+            ))}
+            
+            {/* Mobile Pagination */}
+            {totalPages > 1 && (
+              <div className="mt-6">
+                <Pagination>
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious 
+                        onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+                        className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                      />
+                    </PaginationItem>
+                    
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                      <PaginationItem key={page}>
+                        <PaginationLink 
+                          onClick={() => handlePageChange(page)}
+                          isActive={currentPage === page}
+                        >
+                          {page}
+                        </PaginationLink>
+                      </PaginationItem>
+                    ))}
+                    
+                    <PaginationItem>
+                      <PaginationNext 
+                        onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
+                        className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              </div>
+            )}
+          </>
         )}
       </div>
       
