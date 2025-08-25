@@ -5,11 +5,6 @@ import { Badge } from "./ui/badge";
 import { Calendar } from "lucide-react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 
-interface User {
-  id: string;
-  name: string;
-}
-
 interface Task {
   _id?: string;
   id?: string;
@@ -18,7 +13,6 @@ interface Task {
   priority: string;
   status: string;
   dueDate?: string;
-  assignedUsers?: User[];
   projectId?: string;
 }
 
@@ -29,8 +23,8 @@ interface KanbanProps {
 const Kanban: React.FC<KanbanProps> = ({ projectId }) => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const statuses = ["To Do", "In Progress", "Completed"];
-
-  // ✅ Fetch tasks from backend
+  
+  // Fetch tasks from backend
   const fetchTasks = async () => {
     try {
       const res = await fetch(
@@ -43,47 +37,44 @@ const Kanban: React.FC<KanbanProps> = ({ projectId }) => {
           },
         }
       );
-
       if (!res.ok) throw new Error("Failed to fetch tasks");
-
       const data = await res.json();
       setTasks(data); // store tasks in state
     } catch (error) {
       console.error("Error fetching tasks:", error);
     }
   };
-
+  
   useEffect(() => {
     if (projectId) fetchTasks();
   }, [projectId]);
-
-  // ✅ Update status on drag & drop
+  
+  // Update status on drag & drop
   const onDragEnd = async (result: any) => {
     if (!result.destination) return;
-
     const { source, destination, draggableId } = result;
-
+    
     // Only run if status changed
     if (source.droppableId !== destination.droppableId) {
       const movedTask = tasks.find((t) => 
         (t._id || t.id)?.toString() === draggableId
       );
       if (!movedTask) return;
-
+      
       const updatedTask = { ...movedTask, status: destination.droppableId };
       const taskId = movedTask._id || movedTask.id;
-
+      
       // Update UI instantly
       setTasks((prev) =>
         prev.map((t) => 
           ((t._id || t.id)?.toString() === draggableId) ? updatedTask : t
         )
       );
-
-      // Persist update in backend
+      
+      // Persist update in backend - only update status
       if (taskId) {
         try {
-          await fetch(`http://localhost:5000/tasks/${taskId}`, {
+          await fetch(`http://localhost:5000/projects/tasks/${taskId}`, {
             method: "PUT",
             headers: {
               "Content-Type": "application/json",
@@ -97,7 +88,7 @@ const Kanban: React.FC<KanbanProps> = ({ projectId }) => {
       }
     }
   };
-
+  
   return (
     <DragDropContext onDragEnd={onDragEnd}>
       <div className="flex gap-4 justify-evenly max-lg:flex-wrap">
@@ -146,29 +137,9 @@ const Kanban: React.FC<KanbanProps> = ({ projectId }) => {
                               {task.dueDate && (
                                 <div className="flex items-center text-xs text-gray-500 dark:text-gray-400">
                                   <Calendar className="h-4 w-4 mr-1" />
-                                {task.dueDate}
+                                  {format(new Date(task.dueDate), "MMM d, yyyy")}
                                 </div>
                               )}
-                              <div className="flex gap-1 mt-2">
-                                {task.assignedUsers?.map((user) => (
-                                  <Badge
-                                    key={user.id}
-                                    variant="secondary"
-                                    className="text-xs"
-                                  >
-                                    {user.name}
-                                  </Badge>
-                                ))}
-                                {(!task.assignedUsers ||
-                                  task.assignedUsers.length === 0) && (
-                                  <Badge
-                                    variant="outline"
-                                    className="text-xs"
-                                  >
-                                    Unassigned
-                                  </Badge>
-                                )}
-                              </div>
                             </div>
                           </div>
                         )}

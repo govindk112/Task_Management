@@ -18,7 +18,6 @@ import { useRouter } from "next/navigation"
 import { User } from "@/Types/types"
 import { Shield, AlertCircle, RefreshCw } from "lucide-react"
 // import { Skeleton } from "@/components/ui/skeleton"
-
 export default function AnalyticsDashboard() {
   const router = useRouter();
   const { tasks = [] } = useTaskStore()
@@ -29,7 +28,6 @@ export default function AnalyticsDashboard() {
   const [isFetchingRole, setIsFetchingRole] = useState(false);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   const [usersError, setUsersError] = useState<string | null>(null);
-  const [debugInfo, setDebugInfo] = useState<any>(null);
   
   // Fetch user role from database
   const fetchUserRole = useCallback(async (userId: string) => {
@@ -92,7 +90,7 @@ export default function AnalyticsDashboard() {
       setIsFetchingRole(false);
     }
   }, [router]);
-
+  
   // Fetch user info from token
   const fetchUserInfo = useCallback(async () => {
     try {
@@ -103,7 +101,6 @@ export default function AnalyticsDashboard() {
         console.log("No token found in localStorage");
         setUser(null);
         setAuthChecked(true);
-        setDebugInfo({ token: null, error: "No token found" });
         return;
       }
       
@@ -114,7 +111,6 @@ export default function AnalyticsDashboard() {
           console.error("Invalid token format - expected 3 parts, got", parts.length);
           setUser(null);
           setAuthChecked(true);
-          setDebugInfo({ token, error: "Invalid token format" });
           return;
         }
         
@@ -139,11 +135,6 @@ export default function AnalyticsDashboard() {
           console.error("Token missing userId");
           setUser(null);
           setAuthChecked(true);
-          setDebugInfo({ 
-            token: decodedToken, 
-            error: "Token missing userId",
-            foundKeys: Object.keys(decodedToken)
-          });
           return;
         }
         
@@ -160,11 +151,6 @@ export default function AnalyticsDashboard() {
         
         console.log("Setting temporary user state with token role:", tempUserData);
         setUser(tempUserData);
-        setDebugInfo({ 
-          user: tempUserData, 
-          token: decodedToken,
-          note: "Using token role temporarily, fetching database role..."
-        });
         
         // Now try to fetch the actual role from the database
         console.log("Fetching actual role from database...");
@@ -177,24 +163,13 @@ export default function AnalyticsDashboard() {
             role: databaseRole
           };
           setUser(finalUserData);
-          setDebugInfo({ 
-            user: finalUserData, 
-            token: decodedToken,
-            note: "Updated with role from database"
-          });
         } else {
           console.log("Could not fetch role from database, keeping token role");
-          setDebugInfo({ 
-            user: tempUserData, 
-            token: decodedToken,
-            note: "Could not fetch database role, using token role"
-          });
         }
       } catch (err) {
         console.error("Error decoding token:", err);
         setUser(null);
         setAuthChecked(true);
-        setDebugInfo({ token, error: "Token decode error", details: err });
       } finally {
         setAuthChecked(true);
       }
@@ -202,7 +177,6 @@ export default function AnalyticsDashboard() {
       console.error("Error in fetchUserInfo:", err);
       setUser(null);
       setAuthChecked(true);
-      setDebugInfo({ error: "General error", details: err });
     }
   }, [fetchUserRole]);
     
@@ -310,7 +284,7 @@ export default function AnalyticsDashboard() {
       <Skeleton className="h-6 w-12" /> */}
     </div>
   )
-
+  
   // Show loading state while checking authentication
   if (!authChecked || isFetchingRole) {
     return (
@@ -363,34 +337,6 @@ export default function AnalyticsDashboard() {
   
   return (
     <div className="space-y-6">
-      {/* Debug Panel - Remove in production */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <div className="flex items-start gap-3">
-            <div className="flex-shrink-0 mt-1">
-              <AlertCircle className="h-5 w-5 text-yellow-600" />
-            </div>
-            <div className="flex-1">
-              <h3 className="font-medium text-yellow-800">Debug Information</h3>
-              <div className="mt-2 text-sm text-yellow-700">
-                <div><strong>User ID:</strong> {user?.userId || 'Not available'}</div>
-                <div><strong>Role:</strong> {user?.role || 'Not available'}</div>
-                <div><strong>Status:</strong> {authChecked ? 'Authenticated' : 'Checking...'}</div>
-                <div><strong>Loading Users:</strong> {isLoadingUsers ? 'Yes' : 'No'}</div>
-                {debugInfo && (
-                  <details className="mt-2">
-                    <summary className="cursor-pointer text-xs">Technical Details</summary>
-                    <pre className="mt-2 text-xs bg-yellow-100 p-2 rounded overflow-auto max-h-40">
-                      {JSON.stringify(debugInfo, null, 2)}
-                    </pre>
-                  </details>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-      
       <div className="flex justify-between items-center mb-6">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold">Analytics Dashboard</h1>

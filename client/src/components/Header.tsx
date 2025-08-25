@@ -22,7 +22,7 @@ const Header = () => {
     
     useEffect(() => {
         if (projectId) {
-            const project = projects.find(p => p._id === projectId);
+            const project = projects.find(p => p.id === projectId);
             setHeaderTitle(project?.name || "Task Management");
         } else {
             setHeaderTitle("Task Management");
@@ -43,13 +43,7 @@ const Header = () => {
                     Add Task
                 </Button>
                  <div
-        className="cursor-pointer"
-         onClick={() => router.push("/Profile")} 
       >
-        <Avatar>
-          <AvatarImage src="https://github.com/shadcn.png" alt="User" className="w-10 h-10 mx-auto rounded-3xl"/>
-          <AvatarFallback>GK</AvatarFallback>
-        </Avatar>
       </div>
             </div>
            

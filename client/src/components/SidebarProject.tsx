@@ -18,6 +18,8 @@ import {
 } from "./ui/dropdown-menu";
 import { useDashboardStore } from "@/store/DashboardStore";
 import { useTheme } from "next-themes";
+import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
+import Link from "next/link";
 
 interface SidebarProjectProps {
   userRole?: "ADMIN" | "USER";
@@ -109,6 +111,13 @@ const SidebarProject = ({ userRole }: SidebarProjectProps) => {
             <Button variant="ghost" size="icon" onClick={toggleTheme}>
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
+              <Link href="/Profile">
+  <Avatar className="cursor-pointer">
+    <AvatarImage src="https://github.com/shadcn.png" alt="User" className="w-10 h-10 mx-auto rounded-3xl" />
+    <AvatarFallback>GK</AvatarFallback>
+  </Avatar>
+</Link>
+          
           </div>
           {/* Sidebar Navigation */}
           <nav className="flex-1 space-y-2 px-2">

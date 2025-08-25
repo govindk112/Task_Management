@@ -1,125 +1,74 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 
-export default function UserProfile() {
-  const [user, setUser] = useState<any>(null);
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  avatar?: string;
+  role?: "ADMIN" | "USER";
+}
 
-  // Fetch user data from API
+const UserProfile = () => {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Replace with your real logged-in user id or token if needed
+  const userId = "1";
+
   useEffect(() => {
-    fetch("/api/user")
-      .then((res) => res.json())
-      .then((data) => setUser(data));
-  }, []);
+    const fetchUser = async () => {
+      try {
+        const res = await fetch(`/users/${userId}`);
+        const data = await res.json();
+        setUser(data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchUser();
+  }, [userId]);
 
-  // Handle password update
-  const handleUpdatePassword = async () => {
-    if (newPassword !== confirmPassword) {
-      alert("Passwords do not match!");
-      return;
-    }
-
-    await fetch("/api/user", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: user.email, newPassword }),
-    });
-
-    alert("Password updated!");
-    setNewPassword("");
-    setConfirmPassword("");
-  };
-
-  // Handle account delete
-  const handleDeleteAccount = async () => {
-    await fetch("/api/user", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: user.email }),
-    });
-    alert("Account deleted");
-  };
-
-  if (!user) return <p className="text-center">Loading...</p>;
+  if (loading) return <div className="p-6">Loading...</div>;
+  if (!user) return <div className="p-6">User not found</div>;
 
   return (
-    <div className="flex justify-center items-center min-h-screen bg-background">
-      <div className="bg-card p-8 rounded-lg shadow-lg w-full max-w-md text-center">
-        {/* Avatar with Initials */}
-        <Avatar className="w-24 h-24 mx-auto mb-4">
-          <AvatarFallback>
-            {user.name
-              .split(" ")
-              .map((n: string) => n[0])
-              .join("")
-              .toUpperCase()}
-          </AvatarFallback>
+    <div className="p-6 max-w-3xl mx-auto">
+      <h1 className="text-2xl font-bold mb-6">User Profile</h1>
+
+      <div className="flex flex-col items-center gap-4 mb-6">
+        <Avatar className="w-24 h-24">
+          <AvatarImage src={user.avatar || "https://github.com/shadcn.png"} alt="User Avatar" />
+          <AvatarFallback>{user.name[0]}</AvatarFallback>
         </Avatar>
+        <h2 className="text-xl font-semibold">{user.name}</h2>
+        <p className="text-muted-foreground">{user.email}</p>
+      </div>
 
-        {/* Name */}
-        <h2 className="text-2xl font-bold mb-6 text-black dark:text-white">
-          {user.name}
-        </h2>
-
-        {/* Email */}
-        <div className="mb-4 text-left">
-          <Label className="text-black dark:text-white">Email</Label>
-          <Input value={user.email} readOnly className="mt-1" />
+      <div className="space-y-4">
+        <div>
+          <label className="block mb-1 font-medium">Name</label>
+          <Input value={user.name} readOnly />
         </div>
-
-        {/* Current Password */}
-        <div className="mb-4 text-left">
-          <Label className="text-black dark:text-white">Current Password</Label>
-          <Input
-            type="password"
-            placeholder="Enter current password"
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            className="mt-1"
-          />
+        <div>
+          <label className="block mb-1 font-medium">Email</label>
+          <Input value={user.email} readOnly />
         </div>
-
-        {/* New Password */}
-        <div className="mb-4 text-left">
-          <Label className="text-black dark:text-white">New Password</Label>
-          <Input
-            type="password"
-            placeholder="Enter new password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            className="mt-1"
-          />
+        <div className="flex gap-4">
+          <Button disabled>Save Changes</Button>
+          <Button variant="outline" disabled>
+            Cancel
+          </Button>
         </div>
-
-        {/* Confirm New Password */}
-        <div className="mb-6 text-left">
-          <Label className="text-black dark:text-white">Confirm New Password</Label>
-          <Input
-            type="password"
-            placeholder="Confirm new password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            className="mt-1"
-          />
-        </div>
-
-        {/* Update Password Button */}
-        <Button onClick={handleUpdatePassword} className="w-full mb-3">
-          Update Password
-        </Button>
-
-        {/* Delete Account Button */}
-        <Button onClick={handleDeleteAccount} variant="destructive" className="w-full">
-          Delete Account
-        </Button>
       </div>
     </div>
   );
-}
+};
+
+export default UserProfile;

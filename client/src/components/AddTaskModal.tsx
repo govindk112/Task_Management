@@ -21,29 +21,32 @@ export default function AddTaskModal({ projectId }: { projectId?: string }) {
   const [priority, setPriority] = useState<TaskPriority>("Medium");
   const [status, setStatus] = useState<TaskStatus>("To Do");
   const [assignedUserIds, setAssignedUserIds] = useState<string[]>([]);
-  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [projectMembers, setProjectMembers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [errMsg, setErrMsg] = useState<string | null>(null);
 
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
-  // Fetch all users from backend
+  // ✅ Fetch only project members (exclude Admin/owner)
   useEffect(() => {
-    if (!isAddModalOpen || !token) return;
-    const fetchUsers = async () => {
+    if (!isAddModalOpen || !token || !projectId) return;
+
+    const fetchMembers = async () => {
       try {
-        const res = await fetch("http://localhost:5000/users", {
+        const res = await fetch(`http://localhost:5000/projects/${projectId}/members`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (!res.ok) throw new Error("Failed to fetch users");
-        const users: User[] = await res.json();
-        setAllUsers(users);
+        if (!res.ok) throw new Error("Failed to fetch project members");
+        const data = await res.json();
+        // API returns { owner, members } → we only take members
+        setProjectMembers(data.members || []);
       } catch (err) {
         console.error(err);
       }
     };
-    fetchUsers();
-  }, [isAddModalOpen, token]);
+
+    fetchMembers();
+  }, [isAddModalOpen, token, projectId]);
 
   // Prefill form for editing
   useEffect(() => {
@@ -56,7 +59,12 @@ export default function AddTaskModal({ projectId }: { projectId?: string }) {
       setStatus(taskToEdit.status);
       setAssignedUserIds(taskToEdit.assignedUsers?.map(u => u.id) || []);
     } else {
-      setTitle(""); setDescription(""); setDueDate(""); setPriority("Medium"); setStatus("To Do"); setAssignedUserIds([]);
+      setTitle("");
+      setDescription("");
+      setDueDate("");
+      setPriority("Medium");
+      setStatus("To Do");
+      setAssignedUserIds([]);
     }
   }, [isAddModalOpen, taskToEdit]);
 
@@ -72,14 +80,12 @@ export default function AddTaskModal({ projectId }: { projectId?: string }) {
     try {
       let res, data;
       if (taskToEdit) {
-        // Edit task
-        res = await fetch(`http://localhost:5000/tasks/${taskToEdit.id}`, {
+        res = await fetch(`http://localhost:5000/projects/tasks/${taskToEdit.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({ title, description, dueDate, priority, status, assigneeId }),
         });
       } else {
-        // Add task
         res = await fetch(`http://localhost:5000/projects/${projectId}/tasks`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -98,7 +104,7 @@ export default function AddTaskModal({ projectId }: { projectId?: string }) {
         priority: data.priority,
         status: data.status,
         projectId: data.projectId,
-        assignedUsers: allUsers.filter(u => assignedUserIds.includes(u.id)),
+        assignedUsers: projectMembers.filter(u => assignedUserIds.includes(u.id)),
       };
 
       taskToEdit ? updateTask(updatedTask) : addTask(updatedTask);
@@ -118,7 +124,7 @@ export default function AddTaskModal({ projectId }: { projectId?: string }) {
 
     setLoading(true);
     try {
-      const res = await fetch(`http://localhost:5000/tasks/${taskToEdit.id}`, {
+      const res = await fetch(`http://localhost:5000/projects/tasks/${taskToEdit.id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -179,15 +185,20 @@ export default function AddTaskModal({ projectId }: { projectId?: string }) {
           </div>
 
           <div>
-            <Label>Assign Users</Label>
+            <Label>Assign Members</Label>
             <div className="flex flex-wrap gap-2">
-              {allUsers.map(u => (
-                <label key={u.id} className="flex items-center gap-2">
-                  <input type="checkbox" checked={assignedUserIds.includes(u.id)}
-                         onChange={e => e.target.checked
-                           ? setAssignedUserIds([...assignedUserIds, u.id])
-                           : setAssignedUserIds(assignedUserIds.filter(id => id !== u.id))} />
-                  {u.name}
+              {projectMembers.map(m => (
+                <label key={m.id} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={assignedUserIds.includes(m.id)}
+                    onChange={e =>
+                      e.target.checked
+                        ? setAssignedUserIds([...assignedUserIds, m.id])
+                        : setAssignedUserIds(assignedUserIds.filter(id => id !== m.id))
+                    }
+                  />
+                  {m.name}
                 </label>
               ))}
             </div>

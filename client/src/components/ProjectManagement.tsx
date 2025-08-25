@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useProjectStore } from "@/store/useProjectStore";
 import { useModalStore } from "@/store/modalStore";
-import { Plus, Trash2, Edit2, X, Search, Shield, AlertCircle, User } from "lucide-react";
+import { Plus, Trash2, Edit2, X, Search, Shield, User, Bell, Users, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -36,6 +36,24 @@ interface Project {
 interface User {
   userId: string;
   role: "ADMIN" | "USER";
+  name?: string;
+  email?: string;
+}
+
+// Define ProjectMember interface
+interface ProjectMember {
+  id: string;
+  userId: string;
+  projectId: string;
+  user: User;
+}
+
+// Define Notification interface
+interface Notification {
+  id: string;
+  message: string;
+  read: boolean;
+  timestamp: Date;
 }
 
 // Status options
@@ -79,14 +97,25 @@ export default function ProjectManagement() {
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [isFetchingRole, setIsFetchingRole] = useState(false);
-  const [debugInfo, setDebugInfo] = useState<any>(null);
-
+  
+  // Notifications state
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  
+  // Member management state
+  const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
+  const [currentProjectForMembers, setCurrentProjectForMembers] = useState<Project | null>(null);
+  const [projectMembers, setProjectMembers] = useState<{ owner: User | null; members: User[] }>({ owner: null, members: [] });
+  const [newMemberEmail, setNewMemberEmail] = useState("");
+  const [isMemberLoading, setIsMemberLoading] = useState(false);
+  const [memberError, setMemberError] = useState<string | null>(null);
+  
   // Helper function to get color from status
   const getColorFromStatus = (status: string): string => {
     const option = statusOptions.find(opt => opt.value === status);
     return option ? option.color : "red";
   };
-
+  
   // Fetch user role from database
   const fetchUserRole = useCallback(async (userId: string) => {
     setIsFetchingRole(true);
@@ -148,7 +177,7 @@ export default function ProjectManagement() {
       setIsFetchingRole(false);
     }
   }, [router]);
-
+  
   // Fetch user info from token
   const fetchUserInfo = useCallback(async () => {
     try {
@@ -159,7 +188,6 @@ export default function ProjectManagement() {
         console.log("No token found in localStorage");
         setUser(null);
         setAuthChecked(true);
-        setDebugInfo({ token: null, error: "No token found" });
         return;
       }
       
@@ -170,7 +198,6 @@ export default function ProjectManagement() {
           console.error("Invalid token format - expected 3 parts, got", parts.length);
           setUser(null);
           setAuthChecked(true);
-          setDebugInfo({ token, error: "Invalid token format" });
           return;
         }
         
@@ -195,11 +222,6 @@ export default function ProjectManagement() {
           console.error("Token missing userId");
           setUser(null);
           setAuthChecked(true);
-          setDebugInfo({ 
-            token: decodedToken, 
-            error: "Token missing userId",
-            foundKeys: Object.keys(decodedToken)
-          });
           return;
         }
         
@@ -212,16 +234,13 @@ export default function ProjectManagement() {
         
         const tempUserData = {
           userId: userId,
-          role: normalizedTokenRole
+          role: normalizedTokenRole,
+          name: decodedToken.name,
+          email: decodedToken.email
         };
         
         console.log("Setting temporary user state with token role:", tempUserData);
         setUser(tempUserData);
-        setDebugInfo({ 
-          user: tempUserData, 
-          token: decodedToken,
-          note: "Using token role temporarily, fetching database role..."
-        });
         
         // Now try to fetch the actual role from the database
         console.log("Fetching actual role from database...");
@@ -231,27 +250,18 @@ export default function ProjectManagement() {
           console.log("Got actual role from database:", databaseRole);
           const finalUserData = {
             userId: userId,
-            role: databaseRole
+            role: databaseRole,
+            name: decodedToken.name,
+            email: decodedToken.email
           };
           setUser(finalUserData);
-          setDebugInfo({ 
-            user: finalUserData, 
-            token: decodedToken,
-            note: "Updated with role from database"
-          });
         } else {
           console.log("Could not fetch role from database, keeping token role");
-          setDebugInfo({ 
-            user: tempUserData, 
-            token: decodedToken,
-            note: "Could not fetch database role, using token role"
-          });
         }
       } catch (err) {
         console.error("Error decoding token:", err);
         setUser(null);
         setAuthChecked(true);
-        setDebugInfo({ token, error: "Token decode error", details: err });
       } finally {
         setAuthChecked(true);
       }
@@ -259,11 +269,10 @@ export default function ProjectManagement() {
       console.error("Error in fetchUserInfo:", err);
       setUser(null);
       setAuthChecked(true);
-      setDebugInfo({ error: "General error", details: err });
     }
   }, [fetchUserRole]);
-
-  // Fetch projects
+  
+  // Fetch projects - now uses the same endpoint for both admins and users
   const fetchProjects = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -313,6 +322,45 @@ export default function ProjectManagement() {
       
       console.log("Processed projects data:", projectsData);
       setProjects(projectsData);
+      
+      // Check for new project assignments and create notifications
+      if (user && user.role !== "ADMIN") {
+        const lastChecked = localStorage.getItem(`lastProjectCheck_${user.userId}`);
+        const now = new Date().toISOString();
+        
+        // Store current check time
+        localStorage.setItem(`lastProjectCheck_${user.userId}`, now);
+        
+        // Only check for new assignments if we've checked before
+        if (lastChecked) {
+          // In a real app, you would have a timestamp for when the project was assigned
+          // For now, we'll just check if there are any new projects
+          const prevProjects = JSON.parse(localStorage.getItem(`prevProjects_${user.userId}`) || "[]");
+          
+          if (prevProjects.length > 0) {
+            const newProjects = projectsData.filter(project => 
+              !prevProjects.some((p: Project) => p.id === project.id)
+            );
+            
+            if (newProjects.length > 0) {
+              const newNotifications: Notification[] = newProjects.map(project => ({
+                id: `notification-${Date.now()}-${project.id}`,
+                message: `You have been assigned to project: ${project.name}`,
+                read: false,
+                timestamp: new Date()
+              }));
+              
+              setNotifications(prev => [...newNotifications, ...prev]);
+            }
+          }
+          
+          // Store current projects for next check
+          localStorage.setItem(`prevProjects_${user.userId}`, JSON.stringify(projectsData));
+        } else {
+          // First time checking, store current projects
+          localStorage.setItem(`prevProjects_${user.userId}`, JSON.stringify(projectsData));
+        }
+      }
     } catch (error) {
       console.error("Error fetching projects:", error);
       setError("Failed to load projects. Please try again.");
@@ -320,14 +368,161 @@ export default function ProjectManagement() {
     } finally {
       setIsLoading(false);
     }
-  }, [router, setProjects]);
-
+  }, [router, setProjects, user]);
+  
+  // Fetch project members
+  const fetchProjectMembers = useCallback(async (projectId: string) => {
+    setIsMemberLoading(true);
+    setMemberError(null);
+    
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        router.push("/login");
+        return;
+      }
+      
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      const response = await fetch(`${apiUrl}/projects/${projectId}/members`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          router.push("/login");
+          return;
+        }
+        throw new Error(`Failed to fetch project members: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      setProjectMembers(data);
+    } catch (error) {
+      console.error("Error fetching project members:", error);
+      setMemberError("Failed to load project members. Please try again.");
+    } finally {
+      setIsMemberLoading(false);
+    }
+  }, [router]);
+  
+  // Add member to project
+  const handleAddMember = useCallback(async () => {
+    if (!newMemberEmail.trim() || !currentProjectForMembers) {
+      setMemberError("Email is required");
+      return;
+    }
+    
+    setIsMemberLoading(true);
+    setMemberError(null);
+    
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        router.push("/login");
+        return;
+      }
+      
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      const response = await fetch(`${apiUrl}/projects/${currentProjectForMembers.id}/members`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ email: newMemberEmail }),
+      });
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          router.push("/login");
+          return;
+        }
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to add member");
+      }
+      
+      // Refresh the members list
+      await fetchProjectMembers(currentProjectForMembers.id);
+      setNewMemberEmail("");
+    } catch (error) {
+      console.error("Error adding member:", error);
+      setMemberError(error instanceof Error ? error.message : "Failed to add member. Please try again.");
+    } finally {
+      setIsMemberLoading(false);
+    }
+  }, [newMemberEmail, currentProjectForMembers, fetchProjectMembers, router]);
+  
+  // Remove member from project
+  const handleRemoveMember = useCallback(async (userId: string) => {
+    if (!currentProjectForMembers) return;
+    
+    if (!confirm("Are you sure you want to remove this member?")) return;
+    
+    setIsMemberLoading(true);
+    setMemberError(null);
+    
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        router.push("/login");
+        return;
+      }
+      
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      const response = await fetch(`${apiUrl}/projects/${currentProjectForMembers.id}/members/${userId}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          router.push("/login");
+          return;
+        }
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to remove member");
+      }
+      
+      // Refresh the members list
+      await fetchProjectMembers(currentProjectForMembers.id);
+    } catch (error) {
+      console.error("Error removing member:", error);
+      setMemberError(error instanceof Error ? error.message : "Failed to remove member. Please try again.");
+    } finally {
+      setIsMemberLoading(false);
+    }
+  }, [currentProjectForMembers, fetchProjectMembers, router]);
+  
+  // Open member management modal
+  const openMemberModal = useCallback(async (project: Project) => {
+    setCurrentProjectForMembers(project);
+    setIsMemberModalOpen(true);
+    setMemberError(null);
+    await fetchProjectMembers(project.id);
+  }, [fetchProjectMembers]);
+  
+  // Close member management modal
+  const closeMemberModal = useCallback(() => {
+    setIsMemberModalOpen(false);
+    setCurrentProjectForMembers(null);
+    setProjectMembers({ owner: null, members: [] });
+    setNewMemberEmail("");
+    setMemberError(null);
+  }, []);
+  
   // Initial fetch
   useEffect(() => {
     console.log("Component mounted, fetching user info");
     fetchUserInfo();
   }, [fetchUserInfo]);
-
+  
   // Fetch projects after user info is loaded
   useEffect(() => {
     if (authChecked && user) {
@@ -335,7 +530,7 @@ export default function ProjectManagement() {
       fetchProjects();
     }
   }, [authChecked, user, fetchProjects]);
-
+  
   // Refetch when modal closes
   useEffect(() => {
     if (hasMounted.current && !isAddProjectModalOpen) {
@@ -343,7 +538,7 @@ export default function ProjectManagement() {
     }
     hasMounted.current = true;
   }, [isAddProjectModalOpen, fetchProjects]);
-
+  
   // Handle window resize
   useEffect(() => {
     const handleResize = () => {
@@ -362,12 +557,24 @@ export default function ProjectManagement() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
-
+  
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, filterStatus, projects]);
-
+  
+  // Mark notifications as read when shown
+  useEffect(() => {
+    if (showNotifications && notifications.length > 0) {
+      const unreadNotifications = notifications.filter(n => !n.read);
+      if (unreadNotifications.length > 0) {
+        setNotifications(prev => 
+          prev.map(n => !n.read ? { ...n, read: true } : n)
+        );
+      }
+    }
+  }, [showNotifications, notifications]);
+  
   // Filter projects
   const filteredProjects = projects.filter((project) => {
     const matchesSearch = 
@@ -379,13 +586,13 @@ export default function ProjectManagement() {
     
     return matchesSearch && matchesStatus;
   });
-
+  
   // Calculate pagination
   const totalPages = Math.ceil(filteredProjects.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const currentProjects = filteredProjects.slice(startIndex, endIndex);
-
+  
   // Handle project update
   const handleUpdateProject = useCallback(async () => {
     if (!editName.trim()) {
@@ -446,7 +653,7 @@ export default function ProjectManagement() {
       setIsLoading(false);
     }
   }, [editName, editDescription, editProject, router, setProjects]);
-
+  
   // Handle project deletion
   const handleDeleteProject = useCallback(async (projectId: string) => {
     if (!confirm("Are you sure you want to delete this project?")) return;
@@ -487,7 +694,7 @@ export default function ProjectManagement() {
       setIsLoading(false);
     }
   }, [projects, router, setProjects]);
-
+  
   // Handle adding a new project (Admin only)
   const handleAddProject = useCallback(async () => {
     if (!newProjectName.trim()) {
@@ -541,7 +748,7 @@ export default function ProjectManagement() {
       setIsLoading(false);
     }
   }, [newProjectName, newProjectDescription, router, setIsAddProjectModalOpen]);
-
+  
   // Open edit modal
   const openEditModal = useCallback((project: Project) => {
     setEditProject(project);
@@ -549,13 +756,13 @@ export default function ProjectManagement() {
     setEditDescription(project.description || "");
     setEditStatus("To Do");
   }, []);
-
+  
   // Close edit modal
   const closeEditModal = useCallback(() => {
     setEditProject(null);
     setError(null);
   }, []);
-
+  
   // Close add project modal
   const closeAddModal = useCallback(() => {
     setIsAddProjectModalOpen(false);
@@ -564,7 +771,7 @@ export default function ProjectManagement() {
     setNewProjectDescription("");
     setNewProjectStatus("To Do");
   }, [setIsAddProjectModalOpen]);
-
+  
   // Open add project modal (Admin only)
   const openAddModal = useCallback(() => {
     if (user?.role !== "ADMIN") {
@@ -574,24 +781,24 @@ export default function ProjectManagement() {
     setIsAddProjectModalOpen(true);
     setError(null);
   }, [user, setIsAddProjectModalOpen]);
-
+  
   // Clear filters
   const clearFilters = useCallback(() => {
     setSearchQuery("");
     setFilterStatus(null);
   }, []);
-
+  
   // Toggle filter expansion
   const toggleFilterExpansion = useCallback(() => {
     setIsFilterExpanded(!isFilterExpanded);
   }, [isFilterExpanded]);
-
+  
   // Handle page change
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
-
+  
   // Generate page numbers
   const getPageNumbers = () => {
     const pages = [];
@@ -628,46 +835,84 @@ export default function ProjectManagement() {
     
     return pages;
   };
-
-  // Debug information
-  useEffect(() => {
-    console.log("Current user:", user);
-    console.log("Auth checked:", authChecked);
-    console.log("Projects:", projects);
-    console.log("Debug info:", debugInfo);
-  }, [user, authChecked, projects, debugInfo]);
-
+  
+  // Toggle notifications panel
+  const toggleNotifications = () => {
+    setShowNotifications(!showNotifications);
+  };
+  
+  // Mark notification as read
+  const markAsRead = (id: string) => {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  };
+  
+  // Remove notification
+  const removeNotification = (id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
+  
   return (
     <div className="container mx-auto py-6 px-4 sm:px-6 lg:px-8">
-      {/* Debug Panel */}
-      <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-        <div className="flex items-start gap-3">
-          <div className="flex-shrink-0 mt-1">
-            <AlertCircle className="h-5 w-5 text-yellow-600" />
-          </div>
-          <div className="flex-1">
-            <h3 className="font-medium text-yellow-800">Debug Information</h3>
-            <div className="mt-2 text-sm text-yellow-700">
-              <div><strong>User ID:</strong> {user?.userId || 'Not available'}</div>
-              <div><strong>Role:</strong> {user?.role || 'Not available'}</div>
-              <div><strong>Status:</strong> {authChecked ? 'Authenticated' : 'Checking...'}</div>
-              <div><strong>Loading:</strong> {isLoading ? 'Yes' : 'No'}</div>
-              <div><strong>Error:</strong> {error || 'None'}</div>
-              <div className="mt-2">
-                <strong>Token:</strong> {localStorage.getItem('token') ? 'Present' : 'Missing'}
-              </div>
-              
-              {debugInfo && (
-                <details className="mt-2">
-                  <summary className="cursor-pointer text-xs">Technical Details</summary>
-                  <pre className="mt-2 text-xs bg-yellow-100 p-2 rounded overflow-auto max-h-40">
-                    {JSON.stringify(debugInfo, null, 2)}
-                  </pre>
-                </details>
+      {/* Notification Bell */}
+      <div className="fixed top-4 right-4 z-50">
+        <Button 
+          variant="outline" 
+          size="icon" 
+          className="relative"
+          onClick={toggleNotifications}
+        >
+          <Bell className="h-5 w-5" />
+          {notifications.some(n => !n.read) && (
+            <span className="absolute top-0 right-0 h-3 w-3 bg-red-500 rounded-full"></span>
+          )}
+        </Button>
+        
+        {/* Notifications Panel */}
+        {showNotifications && (
+          <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg z-50 border">
+            <div className="p-4 border-b">
+              <h3 className="font-semibold">Notifications</h3>
+            </div>
+            <div className="max-h-80 overflow-y-auto">
+              {notifications.length === 0 ? (
+                <div className="p-4 text-center text-gray-500">
+                  No notifications
+                </div>
+              ) : (
+                notifications.map(notification => (
+                  <div 
+                    key={notification.id} 
+                    className={`p-4 border-b ${!notification.read ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                  >
+                    <div className="flex justify-between">
+                      <p className={notification.read ? '' : 'font-medium'}>{notification.message}</p>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => removeNotification(notification.id)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {notification.timestamp.toLocaleString()}
+                    </div>
+                    {!notification.read && (
+                      <Button 
+                        variant="link" 
+                        size="sm" 
+                        className="p-0 h-auto text-xs"
+                        onClick={() => markAsRead(notification.id)}
+                      >
+                        Mark as read
+                      </Button>
+                    )}
+                  </div>
+                ))
               )}
             </div>
           </div>
-        </div>
+        )}
       </div>
       
       {error && (
@@ -678,7 +923,9 @@ export default function ProjectManagement() {
       
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl sm:text-3xl font-bold">Project Management</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold">
+            {user?.role === "ADMIN" ? "Project Management" : "My Projects"}
+          </h1>
           {user && (
             <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-sm ${
               user.role === "ADMIN" 
@@ -796,13 +1043,18 @@ export default function ProjectManagement() {
       ) : filteredProjects.length === 0 ? (
         <div className="text-center py-12">
           <h2 className="text-xl font-semibold mb-2">
-            {projects.length === 0 ? "No projects yet" : "No projects match your filters"}
+            {projects.length === 0 
+              ? (user?.role === "ADMIN" 
+                  ? "No projects yet" 
+                  : "No projects assigned to you yet")
+              : "No projects match your filters"
+            }
           </h2>
           <p className="text-gray-600 mb-4">
             {projects.length === 0 
               ? (user?.role === "ADMIN" 
                   ? "Create your first project to get started" 
-                  : "You don't have any projects assigned to you yet")
+                  : "You will see projects here when they are assigned to you")
               : "Try adjusting your search or filter criteria"
             }
           </p>
@@ -868,6 +1120,20 @@ export default function ProjectManagement() {
                             >
                               <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
                             </Button>
+                            
+                            {/* Add Member Management Button */}
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8 sm:h-9 sm:w-9"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                openMemberModal(project);
+                              }}
+                              aria-label="Manage project members"
+                            >
+                              <Users className="w-3 h-3 sm:w-4 sm:h-4" />
+                            </Button>
                           </div>
                         )}
                       </div>
@@ -883,10 +1149,14 @@ export default function ProjectManagement() {
                         <p className="text-sm text-gray-600">To Do</p>
                       </div>
                       <div className="text-xs text-gray-400 mt-1 flex items-center gap-1">
-                        <span>Owner ID:</span>
-                        <span className="font-mono">{project.ownerId}</span>
-                        {isOwner && (
-                          <span className="text-green-600">(You)</span>
+                        {isOwner ? (
+                          <>
+                            <span>Owner ID:</span>
+                            <span className="font-mono">{project.ownerId}</span>
+                            <span className="text-green-600">(You)</span>
+                          </>
+                        ) : (
+                          <span className="text-green-600">Assigned to you</span>
                         )}
                       </div>
                     </CardContent>
@@ -1091,6 +1361,113 @@ export default function ProjectManagement() {
                 {isLoading ? "Saving..." : "Save Changes"}
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Member Management Modal - Only for Project Owners */}
+      {isMemberModalOpen && currentProjectForMembers && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="member-modal-title"
+          onClick={(e) => e.target === e.currentTarget && closeMemberModal()}
+        >
+          <div className="bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-lg w-full max-w-md relative">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute top-2 right-2"
+              onClick={closeMemberModal}
+              aria-label="Close member management dialog"
+            >
+              <X className="w-5 h-5" />
+            </Button>
+            
+            <h2 id="member-modal-title" className="text-xl font-bold mb-4">Manage Members</h2>
+            <p className="text-sm text-gray-600 mb-4">Project: {currentProjectForMembers.name}</p>
+            
+            {memberError && (
+              <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">
+                {memberError}
+              </div>
+            )}
+            
+            {isMemberLoading ? (
+              <div className="text-center py-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+              </div>
+            ) : (
+              <>
+                <div className="mb-6">
+                  <h3 className="font-medium mb-2">Project Members</h3>
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {/* Owner */}
+                    {projectMembers.owner && (
+                      <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center">
+                            {projectMembers.owner.name?.charAt(0) || 'O'}
+                          </div>
+                          <div>
+                            <p className="font-medium">{projectMembers.owner.name}</p>
+                            <p className="text-xs text-gray-500">{projectMembers.owner.email}</p>
+                          </div>
+                        </div>
+                        <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">Owner</span>
+                      </div>
+                    )}
+                    
+                    {/* Members */}
+                    {projectMembers.members.map((member) => (
+                      <div key={member.userId} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center">
+                            {member.name?.charAt(0) || 'M'}
+                          </div>
+                          <div>
+                            <p className="font-medium">{member.name}</p>
+                            <p className="text-xs text-gray-500">{member.email}</p>
+                          </div>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleRemoveMember(member.userId)}
+                          disabled={isMemberLoading}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    ))}
+                    
+                    {projectMembers.members.length === 0 && (
+                      <p className="text-sm text-gray-500 text-center py-2">No additional members</p>
+                    )}
+                  </div>
+                </div>
+                
+                <div>
+                  <h3 className="font-medium mb-2">Add New Member</h3>
+                  <div className="flex gap-2">
+                    <Input
+                      type="email"
+                      placeholder="Enter email address"
+                      className="flex-1"
+                      value={newMemberEmail}
+                      onChange={(e) => setNewMemberEmail(e.target.value)}
+                    />
+                    <Button
+                      onClick={handleAddMember}
+                      disabled={isMemberLoading || !newMemberEmail.trim()}
+                    >
+                      Add
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
