@@ -6,6 +6,20 @@ const prisma = new PrismaClient();
 
 async function main() {
   const passwordHash = await bcrypt.hash("password123", 10);
+
+  // Admin user (always ADMIN)
+  await prisma.user.upsert({
+    where: { email: "rishav@example.com" },
+    update: { role: "ADMIN" }, // 👈 ensures role stays ADMIN even if user exists
+    create: {
+      name: "Rishav",
+      email: "rishav@example.com",
+      password: passwordHash,
+      role: "ADMIN",
+    },
+  });
+
+  // Demo users (always USER)
   const demoEmails = [
     "demo1@example.com",
     "demo2@example.com",
@@ -17,15 +31,17 @@ async function main() {
   for (const email of demoEmails) {
     await prisma.user.upsert({
       where: { email },
-      update: {},
+      update: { role: "USER" }, // 👈 ensures they stay USER
       create: {
         name: email.split("@")[0],
         email,
         password: passwordHash,
+        role: "USER",
       },
     });
   }
-  console.log("Demo users created/updated.");
+
+  console.log("Admin + Demo users created/updated ✅");
 }
 
 main()

@@ -1,40 +1,32 @@
 import express from "express";
 import { authenticate } from "../services/middleware.auth.js";
-import {
-  getUserNotifications,
-  markNotificationAsRead,
-  deleteNotification,
-} from "../services/notificationService.js";
+import prisma from "../lib/prisma.js";
 
 const router = express.Router();
 
-// Get all notifications for logged-in user
+// Get notifications for logged-in user
 router.get("/", authenticate, async (req, res) => {
   try {
-    const notifications = await getUserNotifications(req.user.userId);
+    const notifications = await prisma.notification.findMany({
+      where: { userId: req.user.userId },
+      orderBy: { createdAt: "desc" },
+    });
     res.json(notifications);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(400).json({ error: err.message });
   }
 });
 
-// Mark as read
+// Mark notification as read
 router.put("/:id/read", authenticate, async (req, res) => {
   try {
-    await markNotificationAsRead(req.params.id, req.user.userId);
-    res.json({ message: "Notification marked as read" });
+    const updated = await prisma.notification.update({
+      where: { id: req.params.id },
+      data: { read: true },
+    });
+    res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Delete notification
-router.delete("/:id", authenticate, async (req, res) => {
-  try {
-    await deleteNotification(req.params.id, req.user.userId);
-    res.json({ message: "Notification deleted" });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(400).json({ error: err.message });
   }
 });
 

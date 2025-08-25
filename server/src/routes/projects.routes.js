@@ -1,35 +1,35 @@
 // src/routes/projects.routes.js
 import express from "express";
-import { authenticate } from "../services/middleware.auth.js"; 
-import prisma from "../lib/prisma.js";   // <-- ensure prisma client import
+import { authenticate, requireRole } from "../services/middleware.auth.js";
 import {
   createProject,
   getUserProjects,
   getProjectById,
 } from "../services/projectService.js";
-
+import prisma from "../lib/prisma.js";
 import {
   addMemberToProject,
   listProjectMembers,
   removeMemberFromProject,
 } from "../services/memberService.js";
 
-
-
 const router = express.Router();
 
-// Create project
-router.post("/", authenticate, async (req, res) => {
+// Only admins can create projects
+router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
   try {
-    const { name, description } = req.body;
-    const project = await createProject(req.user.userId, name, description);
+    const project = await createProject(
+      req.user.userId,
+      req.body.name,
+      req.body.description
+    );
     res.json(project);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
-// Get all projects for logged-in user
+// Both Admins & Users can fetch projects they belong to
 router.get("/", authenticate, async (req, res) => {
   try {
     const projects = await getUserProjects(req.user.userId);
@@ -39,7 +39,7 @@ router.get("/", authenticate, async (req, res) => {
   }
 });
 
-// Get project by ID (UUID, no parseInt!)
+// Get project by ID
 router.get("/:id", authenticate, async (req, res) => {
   try {
     const project = await getProjectById(req.params.id);
@@ -56,7 +56,6 @@ router.put("/:id", authenticate, async (req, res) => {
     const { id } = req.params;
     const { name, description, colorCode } = req.body;
 
-    // Ensure project belongs to user
     const project = await prisma.project.findUnique({ where: { id } });
     if (!project || project.ownerId !== req.user.userId.toString()) {
       return res.status(403).json({ error: "Not authorized" });
@@ -78,7 +77,6 @@ router.delete("/:id", authenticate, async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Ensure project belongs to user
     const project = await prisma.project.findUnique({ where: { id } });
     if (!project || project.ownerId !== req.user.userId.toString()) {
       return res.status(403).json({ error: "Not authorized" });
@@ -96,7 +94,11 @@ router.delete("/:id", authenticate, async (req, res) => {
 router.post("/:id/members", authenticate, async (req, res) => {
   try {
     const { email, userId } = req.body;
-    const result = await addMemberToProject(req.params.id, req.user.userId, { email, userId });
+    const result = await addMemberToProject(
+      req.params.id,
+      req.user.userId,
+      { email, userId }
+    );
     res.json(result);
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message });
@@ -126,6 +128,5 @@ router.delete("/:id/members/:userId", authenticate, async (req, res) => {
     res.status(err.status || 400).json({ error: err.message });
   }
 });
-
 
 export default router;
