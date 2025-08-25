@@ -24,15 +24,15 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 
-// Define TypeScript interfaces based on backend service
+// TypeScript interfaces
 interface Project {
   id: string;
   name: string;
   description?: string;
   ownerId: string;
+  status?: string;
 }
 
-// Define User interface
 interface User {
   userId: string;
   role: "ADMIN" | "USER";
@@ -40,7 +40,6 @@ interface User {
   email?: string;
 }
 
-// Define ProjectMember interface
 interface ProjectMember {
   id: string;
   userId: string;
@@ -48,7 +47,6 @@ interface ProjectMember {
   user: User;
 }
 
-// Define Notification interface
 interface Notification {
   id: string;
   message: string;
@@ -57,17 +55,20 @@ interface Notification {
 }
 
 // Status options
-const statusOptions = [
+const STATUS_OPTIONS = [
   { value: "To Do", color: "red" },
   { value: "In Progress", color: "yellow" },
   { value: "Complete", color: "green" }
 ];
 
 export default function ProjectManagement() {
+  // Router and stores
   const router = useRouter();
   const { projects, setProjects } = useProjectStore();
   const isAddProjectModalOpen = useModalStore((state) => state.isAddProjectModalOpen);
   const setIsAddProjectModalOpen = useModalStore((state) => state.setIsAddProjectModalOpen);
+  
+  // Refs
   const hasMounted = useRef(false);
   
   // State management
@@ -81,7 +82,6 @@ export default function ProjectManagement() {
   // Add project state
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectDescription, setNewProjectDescription] = useState("");
-  const [newProjectStatus, setNewProjectStatus] = useState("To Do");
   
   // Filter state
   const [searchQuery, setSearchQuery] = useState("");
@@ -110,13 +110,17 @@ export default function ProjectManagement() {
   const [isMemberLoading, setIsMemberLoading] = useState(false);
   const [memberError, setMemberError] = useState<string | null>(null);
   
-  // Helper function to get color from status
+  // New state for owner names and task counts
+  const [ownerNames, setOwnerNames] = useState<Record<string, string>>({});
+  const [taskCounts, setTaskCounts] = useState<Record<string, number>>({});
+
+  // Helper functions
   const getColorFromStatus = (status: string): string => {
-    const option = statusOptions.find(opt => opt.value === status);
+    const option = STATUS_OPTIONS.find(opt => opt.value === status);
     return option ? option.color : "red";
   };
-  
-  // Fetch user role from database
+
+  // API functions
   const fetchUserRole = useCallback(async (userId: string) => {
     setIsFetchingRole(true);
     try {
@@ -149,7 +153,6 @@ export default function ProjectManagement() {
       const data = await response.json();
       console.log("User role response:", data);
       
-      // Handle different response formats
       let role = data.role;
       if (!role && data.user && data.user.role) {
         role = data.user.role;
@@ -160,7 +163,6 @@ export default function ProjectManagement() {
         return null;
       }
       
-      // Normalize role to uppercase
       role = role.toUpperCase();
       
       if (role !== "ADMIN" && role !== "USER") {
@@ -177,8 +179,7 @@ export default function ProjectManagement() {
       setIsFetchingRole(false);
     }
   }, [router]);
-  
-  // Fetch user info from token
+
   const fetchUserInfo = useCallback(async () => {
     try {
       const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -192,7 +193,6 @@ export default function ProjectManagement() {
       }
       
       try {
-        // Decode JWT token
         const parts = token.split('.');
         if (parts.length !== 3) {
           console.error("Invalid token format - expected 3 parts, got", parts.length);
@@ -210,7 +210,6 @@ export default function ProjectManagement() {
         const decodedToken = JSON.parse(jsonPayload);
         console.log("Decoded token payload:", decodedToken);
         
-        // Try multiple possible field names for user ID
         const userId = decodedToken.userId || 
                       decodedToken.id || 
                       decodedToken.sub || 
@@ -225,8 +224,6 @@ export default function ProjectManagement() {
           return;
         }
         
-        // First, set the user with the role from the token as a temporary value
-        // We'll update this after fetching the actual role from the database
         const tokenRole = decodedToken.role || "USER";
         const normalizedTokenRole = tokenRole.toUpperCase() as "ADMIN" | "USER";
         
@@ -242,7 +239,6 @@ export default function ProjectManagement() {
         console.log("Setting temporary user state with token role:", tempUserData);
         setUser(tempUserData);
         
-        // Now try to fetch the actual role from the database
         console.log("Fetching actual role from database...");
         const databaseRole = await fetchUserRole(userId);
         
@@ -271,8 +267,7 @@ export default function ProjectManagement() {
       setAuthChecked(true);
     }
   }, [fetchUserRole]);
-  
-  // Fetch projects - now uses the same endpoint for both admins and users
+
   const fetchProjects = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -306,7 +301,6 @@ export default function ProjectManagement() {
       const data = await res.json();
       console.log("Raw projects response:", data);
       
-      // Handle different response formats
       let projectsData: Project[] = [];
       
       if (Array.isArray(data)) {
@@ -323,18 +317,29 @@ export default function ProjectManagement() {
       console.log("Processed projects data:", projectsData);
       setProjects(projectsData);
       
-      // Check for new project assignments and create notifications
+      // Fetch owner names and task counts for each project
+      const ownerIds = Array.from(new Set(projectsData.map(p => p.ownerId)));
+      const projectIds = projectsData.map(p => p.id);
+      
+      try {
+        const [ownerNamesData, taskCountsData] = await Promise.all([
+          fetchOwnerNames(ownerIds, token),
+          fetchTaskCounts(projectIds, token)
+        ]);
+        
+        setOwnerNames(ownerNamesData);
+        setTaskCounts(taskCountsData);
+      } catch (error) {
+        console.error("Error fetching additional project data:", error);
+      }
+      
       if (user && user.role !== "ADMIN") {
         const lastChecked = localStorage.getItem(`lastProjectCheck_${user.userId}`);
         const now = new Date().toISOString();
         
-        // Store current check time
         localStorage.setItem(`lastProjectCheck_${user.userId}`, now);
         
-        // Only check for new assignments if we've checked before
         if (lastChecked) {
-          // In a real app, you would have a timestamp for when the project was assigned
-          // For now, we'll just check if there are any new projects
           const prevProjects = JSON.parse(localStorage.getItem(`prevProjects_${user.userId}`) || "[]");
           
           if (prevProjects.length > 0) {
@@ -354,10 +359,8 @@ export default function ProjectManagement() {
             }
           }
           
-          // Store current projects for next check
           localStorage.setItem(`prevProjects_${user.userId}`, JSON.stringify(projectsData));
         } else {
-          // First time checking, store current projects
           localStorage.setItem(`prevProjects_${user.userId}`, JSON.stringify(projectsData));
         }
       }
@@ -369,8 +372,88 @@ export default function ProjectManagement() {
       setIsLoading(false);
     }
   }, [router, setProjects, user]);
-  
-  // Fetch project members
+
+  // New function to fetch owner names
+  const fetchOwnerNames = useCallback(async (ownerIds: string[], token: string): Promise<Record<string, string>> => {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+    const ownerNamesMap: Record<string, string> = {};
+    
+    // For current user, we already have the name
+    if (user) {
+      ownerNamesMap[user.userId] = user.name || user.userId;
+    }
+    
+    const promises = ownerIds
+      .filter(id => !ownerNamesMap[id]) // Skip if we already have the name
+      .map(async (id) => {
+        try {
+          const response = await fetch(`${apiUrl}/users/${id}`, {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+          });
+          
+          if (!response.ok) {
+            console.error(`Failed to fetch owner name for ID: ${id}`);
+            return { id, name: id }; // Fallback to ID
+          }
+          
+          const data = await response.json();
+          const userData = data.user || data;
+          return { id, name: userData.name || id };
+        } catch (error) {
+          console.error(`Error fetching owner name for ID: ${id}`, error);
+          return { id, name: id }; // Fallback to ID
+        }
+      });
+    
+    const results = await Promise.all(promises);
+    results.forEach(result => {
+      ownerNamesMap[result.id] = result.name;
+    });
+    
+    return ownerNamesMap;
+  }, [user]);
+
+  // New function to fetch task counts
+  const fetchTaskCounts = useCallback(async (projectIds: string[], token: string): Promise<Record<string, number>> => {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+    const taskCountsMap: Record<string, number> = {};
+    
+    const promises = projectIds.map(async (id) => {
+      try {
+        const response = await fetch(`${apiUrl}/projects/${id}/tasks`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        
+        if (!response.ok) {
+          console.error(`Failed to fetch tasks for project ID: ${id}`);
+          return { id, count: 0 };
+        }
+        
+        const data = await response.json();
+        const tasks = Array.isArray(data) ? data : (data.tasks || []);
+        return { id, count: tasks.length };
+      } catch (error) {
+        console.error(`Error fetching tasks for project ID: ${id}`, error);
+        return { id, count: 0 };
+      }
+    });
+    
+    const results = await Promise.all(promises);
+    results.forEach(result => {
+      taskCountsMap[result.id] = result.count;
+    });
+    
+    return taskCountsMap;
+  }, []);
+
   const fetchProjectMembers = useCallback(async (projectId: string) => {
     setIsMemberLoading(true);
     setMemberError(null);
@@ -408,8 +491,8 @@ export default function ProjectManagement() {
       setIsMemberLoading(false);
     }
   }, [router]);
-  
-  // Add member to project
+
+  // Action handlers
   const handleAddMember = useCallback(async () => {
     if (!newMemberEmail.trim() || !currentProjectForMembers) {
       setMemberError("Email is required");
@@ -445,7 +528,6 @@ export default function ProjectManagement() {
         throw new Error(errorData.error || "Failed to add member");
       }
       
-      // Refresh the members list
       await fetchProjectMembers(currentProjectForMembers.id);
       setNewMemberEmail("");
     } catch (error) {
@@ -455,8 +537,7 @@ export default function ProjectManagement() {
       setIsMemberLoading(false);
     }
   }, [newMemberEmail, currentProjectForMembers, fetchProjectMembers, router]);
-  
-  // Remove member from project
+
   const handleRemoveMember = useCallback(async (userId: string) => {
     if (!currentProjectForMembers) return;
     
@@ -490,7 +571,6 @@ export default function ProjectManagement() {
         throw new Error(errorData.error || "Failed to remove member");
       }
       
-      // Refresh the members list
       await fetchProjectMembers(currentProjectForMembers.id);
     } catch (error) {
       console.error("Error removing member:", error);
@@ -499,101 +579,7 @@ export default function ProjectManagement() {
       setIsMemberLoading(false);
     }
   }, [currentProjectForMembers, fetchProjectMembers, router]);
-  
-  // Open member management modal
-  const openMemberModal = useCallback(async (project: Project) => {
-    setCurrentProjectForMembers(project);
-    setIsMemberModalOpen(true);
-    setMemberError(null);
-    await fetchProjectMembers(project.id);
-  }, [fetchProjectMembers]);
-  
-  // Close member management modal
-  const closeMemberModal = useCallback(() => {
-    setIsMemberModalOpen(false);
-    setCurrentProjectForMembers(null);
-    setProjectMembers({ owner: null, members: [] });
-    setNewMemberEmail("");
-    setMemberError(null);
-  }, []);
-  
-  // Initial fetch
-  useEffect(() => {
-    console.log("Component mounted, fetching user info");
-    fetchUserInfo();
-  }, [fetchUserInfo]);
-  
-  // Fetch projects after user info is loaded
-  useEffect(() => {
-    if (authChecked && user) {
-      console.log("User info loaded, fetching projects");
-      fetchProjects();
-    }
-  }, [authChecked, user, fetchProjects]);
-  
-  // Refetch when modal closes
-  useEffect(() => {
-    if (hasMounted.current && !isAddProjectModalOpen) {
-      fetchProjects();
-    }
-    hasMounted.current = true;
-  }, [isAddProjectModalOpen, fetchProjects]);
-  
-  // Handle window resize
-  useEffect(() => {
-    const handleResize = () => {
-      setWindowWidth(window.innerWidth);
-      
-      if (window.innerWidth < 640) {
-        setItemsPerPage(2);
-      } else if (window.innerWidth < 1024) {
-        setItemsPerPage(4);
-      } else {
-        setItemsPerPage(6);
-      }
-    };
-    
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-  
-  // Reset to page 1 when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, filterStatus, projects]);
-  
-  // Mark notifications as read when shown
-  useEffect(() => {
-    if (showNotifications && notifications.length > 0) {
-      const unreadNotifications = notifications.filter(n => !n.read);
-      if (unreadNotifications.length > 0) {
-        setNotifications(prev => 
-          prev.map(n => !n.read ? { ...n, read: true } : n)
-        );
-      }
-    }
-  }, [showNotifications, notifications]);
-  
-  // Filter projects
-  const filteredProjects = projects.filter((project) => {
-    const matchesSearch = 
-      project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (project.description && project.description.toLowerCase().includes(searchQuery.toLowerCase()));
-    
-    const projectStatus = "To Do";
-    const matchesStatus = filterStatus ? projectStatus === filterStatus : true;
-    
-    return matchesSearch && matchesStatus;
-  });
-  
-  // Calculate pagination
-  const totalPages = Math.ceil(filteredProjects.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const currentProjects = filteredProjects.slice(startIndex, endIndex);
-  
-  // Handle project update
+
   const handleUpdateProject = useCallback(async () => {
     if (!editName.trim()) {
       setError("Project name is required");
@@ -622,6 +608,7 @@ export default function ProjectManagement() {
         body: JSON.stringify({
           name: editName,
           description: editDescription,
+          status: editStatus,
         }),
       });
       
@@ -640,7 +627,7 @@ export default function ProjectManagement() {
       setProjects((prev: Project[]) =>
         prev.map((p: Project) => 
           p.id === editProject.id 
-            ? { ...p, name: editName, description: editDescription } 
+            ? { ...p, name: editName, description: editDescription, status: editStatus } 
             : p
         )
       );
@@ -652,9 +639,8 @@ export default function ProjectManagement() {
     } finally {
       setIsLoading(false);
     }
-  }, [editName, editDescription, editProject, router, setProjects]);
-  
-  // Handle project deletion
+  }, [editName, editDescription, editStatus, editProject, router, setProjects]);
+
   const handleDeleteProject = useCallback(async (projectId: string) => {
     if (!confirm("Are you sure you want to delete this project?")) return;
     
@@ -694,8 +680,7 @@ export default function ProjectManagement() {
       setIsLoading(false);
     }
   }, [projects, router, setProjects]);
-  
-  // Handle adding a new project (Admin only)
+
   const handleAddProject = useCallback(async () => {
     if (!newProjectName.trim()) {
       setError("Project name is required");
@@ -739,7 +724,6 @@ export default function ProjectManagement() {
       
       setNewProjectName("");
       setNewProjectDescription("");
-      setNewProjectStatus("To Do");
       setIsAddProjectModalOpen(false);
     } catch (err) {
       console.error(err);
@@ -748,31 +732,27 @@ export default function ProjectManagement() {
       setIsLoading(false);
     }
   }, [newProjectName, newProjectDescription, router, setIsAddProjectModalOpen]);
-  
-  // Open edit modal
+
+  // Modal handlers
   const openEditModal = useCallback((project: Project) => {
     setEditProject(project);
     setEditName(project.name);
     setEditDescription(project.description || "");
-    setEditStatus("To Do");
+    setEditStatus(project.status || "To Do");
   }, []);
-  
-  // Close edit modal
+
   const closeEditModal = useCallback(() => {
     setEditProject(null);
     setError(null);
   }, []);
-  
-  // Close add project modal
+
   const closeAddModal = useCallback(() => {
     setIsAddProjectModalOpen(false);
     setError(null);
     setNewProjectName("");
     setNewProjectDescription("");
-    setNewProjectStatus("To Do");
   }, [setIsAddProjectModalOpen]);
-  
-  // Open add project modal (Admin only)
+
   const openAddModal = useCallback(() => {
     if (user?.role !== "ADMIN") {
       setError("Only administrators can create projects");
@@ -781,25 +761,38 @@ export default function ProjectManagement() {
     setIsAddProjectModalOpen(true);
     setError(null);
   }, [user, setIsAddProjectModalOpen]);
-  
-  // Clear filters
+
+  const openMemberModal = useCallback(async (project: Project) => {
+    setCurrentProjectForMembers(project);
+    setIsMemberModalOpen(true);
+    setMemberError(null);
+    await fetchProjectMembers(project.id);
+  }, [fetchProjectMembers]);
+
+  const closeMemberModal = useCallback(() => {
+    setIsMemberModalOpen(false);
+    setCurrentProjectForMembers(null);
+    setProjectMembers({ owner: null, members: [] });
+    setNewMemberEmail("");
+    setMemberError(null);
+  }, []);
+
+  // Filter handlers
   const clearFilters = useCallback(() => {
     setSearchQuery("");
     setFilterStatus(null);
   }, []);
-  
-  // Toggle filter expansion
+
   const toggleFilterExpansion = useCallback(() => {
     setIsFilterExpanded(!isFilterExpanded);
   }, [isFilterExpanded]);
-  
-  // Handle page change
+
+  // Pagination handlers
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
-  
-  // Generate page numbers
+
   const getPageNumbers = () => {
     const pages = [];
     const maxVisiblePages = 5;
@@ -835,22 +828,91 @@ export default function ProjectManagement() {
     
     return pages;
   };
-  
-  // Toggle notifications panel
+
+  // Notification handlers
   const toggleNotifications = () => {
     setShowNotifications(!showNotifications);
   };
-  
-  // Mark notification as read
+
   const markAsRead = (id: string) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
   };
-  
-  // Remove notification
+
   const removeNotification = (id: string) => {
     setNotifications(prev => prev.filter(n => n.id !== id));
   };
-  
+
+  // Effects
+  useEffect(() => {
+    console.log("Component mounted, fetching user info");
+    fetchUserInfo();
+  }, [fetchUserInfo]);
+
+  useEffect(() => {
+    if (authChecked && user) {
+      console.log("User info loaded, fetching projects");
+      fetchProjects();
+    }
+  }, [authChecked, user, fetchProjects]);
+
+  useEffect(() => {
+    if (hasMounted.current && !isAddProjectModalOpen) {
+      fetchProjects();
+    }
+    hasMounted.current = true;
+  }, [isAddProjectModalOpen, fetchProjects]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowWidth(window.innerWidth);
+      
+      if (window.innerWidth < 640) {
+        setItemsPerPage(2);
+      } else if (window.innerWidth < 1024) {
+        setItemsPerPage(4);
+      } else {
+        setItemsPerPage(6);
+      }
+    };
+    
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, filterStatus, projects]);
+
+  useEffect(() => {
+    if (showNotifications && notifications.length > 0) {
+      const unreadNotifications = notifications.filter(n => !n.read);
+      if (unreadNotifications.length > 0) {
+        setNotifications(prev => 
+          prev.map(n => !n.read ? { ...n, read: true } : n)
+        );
+      }
+    }
+  }, [showNotifications, notifications]);
+
+  // Computed values
+  const filteredProjects = projects.filter((project) => {
+    const matchesSearch = 
+      project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (project.description && project.description.toLowerCase().includes(searchQuery.toLowerCase()));
+    
+    const projectStatus = project.status || "To Do";
+    const matchesStatus = filterStatus ? projectStatus === filterStatus : true;
+    
+    return matchesSearch && matchesStatus;
+  });
+
+  const totalPages = Math.ceil(filteredProjects.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentProjects = filteredProjects.slice(startIndex, endIndex);
+
+  // JSX
   return (
     <div className="container mx-auto py-6 px-4 sm:px-6 lg:px-8">
       {/* Notification Bell */}
@@ -984,7 +1046,7 @@ export default function ProjectManagement() {
                 onChange={(e) => setFilterStatus(e.target.value || null)}
               >
                 <option value="">All Statuses</option>
-                {statusOptions.map((option) => (
+                {STATUS_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.value}
                   </option>
@@ -1079,6 +1141,8 @@ export default function ProjectManagement() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {currentProjects.map((project) => {
               const isOwner = user && user.userId === project.ownerId;
+              const ownerName = ownerNames[project.name]
+              const taskCount = taskCounts[project.id] || 0;
               
               return (
                 <Link key={project.id} href={`/TaskManager?projectId=${project.id}`} className="block">
@@ -1121,7 +1185,6 @@ export default function ProjectManagement() {
                               <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
                             </Button>
                             
-                            {/* Add Member Management Button */}
                             <Button
                               variant="outline"
                               size="icon"
@@ -1143,21 +1206,15 @@ export default function ProjectManagement() {
                       <div className="flex items-center gap-2">
                         <span 
                           className="w-4 h-4 rounded-full border" 
-                          style={{ backgroundColor: getColorFromStatus("To Do") }} 
+                          style={{ backgroundColor: getColorFromStatus(project.status || "To Do") }} 
                           aria-hidden="true"
                         />
-                        <p className="text-sm text-gray-600">To Do</p>
+                        <p className="text-sm text-gray-600">{project.status || "To Do"}</p>
+                        <span className="text-xs text-gray-500">({taskCount} tasks)</span>
                       </div>
-                      <div className="text-xs text-gray-400 mt-1 flex items-center gap-1">
-                        {isOwner ? (
-                          <>
-                            <span>Owner ID:</span>
-                            <span className="font-mono">{project.ownerId}</span>
-                            <span className="text-green-600">(You)</span>
-                          </>
-                        ) : (
-                          <span className="text-green-600">Assigned to you</span>
-                        )}
+                      <div className="text-xs text-gray-400 mt-1">
+                        Owner: {ownerName}
+                        {isOwner && <span className="text-green-600"> (You)</span>}
                       </div>
                     </CardContent>
                   </Card>
@@ -1341,6 +1398,24 @@ export default function ProjectManagement() {
                   placeholder="Project Description"
                   rows={3}
                 />
+              </div>
+
+              <div>
+                <label htmlFor="project-status" className="block text-sm font-medium mb-1">
+                  Status
+                </label>
+                <select
+                  id="project-status"
+                  className="w-full p-2 border rounded focus:ring-primary focus:border-primary"
+                  value={editStatus}
+                  onChange={(e) => setEditStatus(e.target.value)}
+                >
+                  {STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.value}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             
