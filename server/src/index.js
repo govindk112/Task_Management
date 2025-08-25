@@ -8,6 +8,7 @@ import taskRoutes from "./routes/tasks.routes.js";   // <-- add this
 import commentRoutes from "./routes/comments.routes.js";
 import notificationRoutes from "./routes/notifications.routes.js";
 import userRoutes from "./routes/user.routes.js";
+import userProfileRoutes from "./routes/user.profile.js";
 
 
 
@@ -25,6 +26,8 @@ app.use(express.json());
 app.use("/comments", commentRoutes);
 app.use("/notifications", notificationRoutes);
 app.use("/users", userRoutes);
+app.use("/profile", userProfileRoutes);
+
 
 app.listen(5000, () => {
   console.log("Server running on http://localhost:5000");
