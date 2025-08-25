@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useProjectStore } from "@/store/useProjectStore";
 import { useModalStore } from "@/store/modalStore";
-import { Plus, Trash2, Edit2, X, Search } from "lucide-react";
+import { Plus, Trash2, Edit2, X, Search, Shield, AlertCircle, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -24,19 +24,25 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 
-// Define TypeScript interfaces
+// Define TypeScript interfaces based on backend service
 interface Project {
   id: string;
   name: string;
   description?: string;
-  colorCode?: string;
+  ownerId: string;
 }
 
-// Status options with colors and meanings
+// Define User interface
+interface User {
+  userId: string;
+  role: "ADMIN" | "USER";
+}
+
+// Status options
 const statusOptions = [
-  { value: "To Do", color: "red", hex: "#ef4444" },
-  { value: "In Progress", color: "yellow", hex: "#eab308" },
-  { value: "Complete", color: "green", hex: "#22c55e" }
+  { value: "To Do", color: "red" },
+  { value: "In Progress", color: "yellow" },
+  { value: "Complete", color: "green" }
 ];
 
 export default function ProjectManagement() {
@@ -52,12 +58,12 @@ export default function ProjectManagement() {
   const [editProject, setEditProject] = useState<Project | null>(null);
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
-  const [editStatus, setEditStatus] = useState("To Do"); // Default status
+  const [editStatus, setEditStatus] = useState("To Do");
   
   // Add project state
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectDescription, setNewProjectDescription] = useState("");
-  const [newProjectStatus, setNewProjectStatus] = useState("To Do"); // Default status
+  const [newProjectStatus, setNewProjectStatus] = useState("To Do");
   
   // Filter state
   const [searchQuery, setSearchQuery] = useState("");
@@ -66,23 +72,198 @@ export default function ProjectManagement() {
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(6); // Default for desktop
+  const [itemsPerPage, setItemsPerPage] = useState(6);
   const [windowWidth, setWindowWidth] = useState(0);
+  
+  // User state
+  const [user, setUser] = useState<User | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [isFetchingRole, setIsFetchingRole] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<any>(null);
 
-  // Helper function to get status from color code
-  const getStatusFromColor = (colorCode?: string): string => {
-    if (!colorCode) return "To Do";
-    const option = statusOptions.find(opt => opt.hex === colorCode);
-    return option ? option.value : "To Do";
-  };
-
-  // Helper function to get color hex from status
-  const getColorHexFromStatus = (status: string): string => {
+  // Helper function to get color from status
+  const getColorFromStatus = (status: string): string => {
     const option = statusOptions.find(opt => opt.value === status);
-    return option ? option.hex : "#ef4444"; // Default to red
+    return option ? option.color : "red";
   };
 
-  // Fetch projects with useCallback
+  // Fetch user role from database
+  const fetchUserRole = useCallback(async (userId: string) => {
+    setIsFetchingRole(true);
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        console.error("No token found when fetching user role");
+        return null;
+      }
+      
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      console.log("Fetching role from:", `${apiUrl}/users/${userId}/role`);
+      
+      const response = await fetch(`${apiUrl}/users/${userId}/role`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          router.push("/login");
+          return null;
+        }
+        console.error("Failed to fetch user role:", response.status, response.statusText);
+        return null;
+      }
+      
+      const data = await response.json();
+      console.log("User role response:", data);
+      
+      // Handle different response formats
+      let role = data.role;
+      if (!role && data.user && data.user.role) {
+        role = data.user.role;
+      }
+      
+      if (!role) {
+        console.error("Role not found in response");
+        return null;
+      }
+      
+      // Normalize role to uppercase
+      role = role.toUpperCase();
+      
+      if (role !== "ADMIN" && role !== "USER") {
+        console.error("Invalid role value:", role);
+        return null;
+      }
+      
+      console.log("Successfully fetched role from database:", role);
+      return role as "ADMIN" | "USER";
+    } catch (error) {
+      console.error("Error fetching user role:", error);
+      return null;
+    } finally {
+      setIsFetchingRole(false);
+    }
+  }, [router]);
+
+  // Fetch user info from token
+  const fetchUserInfo = useCallback(async () => {
+    try {
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      console.log("Token from localStorage:", token ? "Token exists" : "No token found");
+      
+      if (!token) {
+        console.log("No token found in localStorage");
+        setUser(null);
+        setAuthChecked(true);
+        setDebugInfo({ token: null, error: "No token found" });
+        return;
+      }
+      
+      try {
+        // Decode JWT token
+        const parts = token.split('.');
+        if (parts.length !== 3) {
+          console.error("Invalid token format - expected 3 parts, got", parts.length);
+          setUser(null);
+          setAuthChecked(true);
+          setDebugInfo({ token, error: "Invalid token format" });
+          return;
+        }
+        
+        const base64Url = parts[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+        }).join(''));
+        
+        const decodedToken = JSON.parse(jsonPayload);
+        console.log("Decoded token payload:", decodedToken);
+        
+        // Try multiple possible field names for user ID
+        const userId = decodedToken.userId || 
+                      decodedToken.id || 
+                      decodedToken.sub || 
+                      decodedToken._id;
+        
+        console.log("Extracted userId:", userId);
+        
+        if (!userId) {
+          console.error("Token missing userId");
+          setUser(null);
+          setAuthChecked(true);
+          setDebugInfo({ 
+            token: decodedToken, 
+            error: "Token missing userId",
+            foundKeys: Object.keys(decodedToken)
+          });
+          return;
+        }
+        
+        // First, set the user with the role from the token as a temporary value
+        // We'll update this after fetching the actual role from the database
+        const tokenRole = decodedToken.role || "USER";
+        const normalizedTokenRole = tokenRole.toUpperCase() as "ADMIN" | "USER";
+        
+        console.log("Token role:", tokenRole, "Normalized:", normalizedTokenRole);
+        
+        const tempUserData = {
+          userId: userId,
+          role: normalizedTokenRole
+        };
+        
+        console.log("Setting temporary user state with token role:", tempUserData);
+        setUser(tempUserData);
+        setDebugInfo({ 
+          user: tempUserData, 
+          token: decodedToken,
+          note: "Using token role temporarily, fetching database role..."
+        });
+        
+        // Now try to fetch the actual role from the database
+        console.log("Fetching actual role from database...");
+        const databaseRole = await fetchUserRole(userId);
+        
+        if (databaseRole) {
+          console.log("Got actual role from database:", databaseRole);
+          const finalUserData = {
+            userId: userId,
+            role: databaseRole
+          };
+          setUser(finalUserData);
+          setDebugInfo({ 
+            user: finalUserData, 
+            token: decodedToken,
+            note: "Updated with role from database"
+          });
+        } else {
+          console.log("Could not fetch role from database, keeping token role");
+          setDebugInfo({ 
+            user: tempUserData, 
+            token: decodedToken,
+            note: "Could not fetch database role, using token role"
+          });
+        }
+      } catch (err) {
+        console.error("Error decoding token:", err);
+        setUser(null);
+        setAuthChecked(true);
+        setDebugInfo({ token, error: "Token decode error", details: err });
+      } finally {
+        setAuthChecked(true);
+      }
+    } catch (err) {
+      console.error("Error in fetchUserInfo:", err);
+      setUser(null);
+      setAuthChecked(true);
+      setDebugInfo({ error: "General error", details: err });
+    }
+  }, [fetchUserRole]);
+
+  // Fetch projects
   const fetchProjects = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -95,6 +276,8 @@ export default function ProjectManagement() {
       }
       
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      console.log("Fetching projects from:", `${apiUrl}/projects`);
+      
       const res = await fetch(`${apiUrl}/projects`, {
         method: "GET",
         headers: {
@@ -108,13 +291,15 @@ export default function ProjectManagement() {
           router.push("/login");
           return;
         }
-        throw new Error("Failed to fetch projects");
+        throw new Error(`Failed to fetch projects: ${res.status} ${res.statusText}`);
       }
       
       const data = await res.json();
+      console.log("Raw projects response:", data);
       
       // Handle different response formats
       let projectsData: Project[] = [];
+      
       if (Array.isArray(data)) {
         projectsData = data;
       } else if (data && Array.isArray(data.projects)) {
@@ -126,6 +311,7 @@ export default function ProjectManagement() {
         }
       }
       
+      console.log("Processed projects data:", projectsData);
       setProjects(projectsData);
     } catch (error) {
       console.error("Error fetching projects:", error);
@@ -138,8 +324,17 @@ export default function ProjectManagement() {
 
   // Initial fetch
   useEffect(() => {
-    fetchProjects();
-  }, [fetchProjects]);
+    console.log("Component mounted, fetching user info");
+    fetchUserInfo();
+  }, [fetchUserInfo]);
+
+  // Fetch projects after user info is loaded
+  useEffect(() => {
+    if (authChecked && user) {
+      console.log("User info loaded, fetching projects");
+      fetchProjects();
+    }
+  }, [authChecked, user, fetchProjects]);
 
   // Refetch when modal closes
   useEffect(() => {
@@ -149,28 +344,22 @@ export default function ProjectManagement() {
     hasMounted.current = true;
   }, [isAddProjectModalOpen, fetchProjects]);
 
-  // Handle window resize to adjust items per page
+  // Handle window resize
   useEffect(() => {
     const handleResize = () => {
       setWindowWidth(window.innerWidth);
       
-      // Adjust items per page based on screen size
       if (window.innerWidth < 640) {
-        setItemsPerPage(2); // Mobile: 2 items per page
+        setItemsPerPage(2);
       } else if (window.innerWidth < 1024) {
-        setItemsPerPage(4); // Tablet: 4 items per page
+        setItemsPerPage(4);
       } else {
-        setItemsPerPage(6); // Desktop: 6 items per page
+        setItemsPerPage(6);
       }
     };
-
-    // Set initial window width
+    
     handleResize();
-    
-    // Add event listener
     window.addEventListener('resize', handleResize);
-    
-    // Clean up
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
@@ -179,30 +368,25 @@ export default function ProjectManagement() {
     setCurrentPage(1);
   }, [searchQuery, filterStatus, projects]);
 
-  // Filter projects based on search query and status
+  // Filter projects
   const filteredProjects = projects.filter((project) => {
     const matchesSearch = 
       project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (project.description && project.description.toLowerCase().includes(searchQuery.toLowerCase()));
     
-    const projectStatus = getStatusFromColor(project.colorCode);
+    const projectStatus = "To Do";
     const matchesStatus = filterStatus ? projectStatus === filterStatus : true;
     
     return matchesSearch && matchesStatus;
   });
 
-  // Calculate pagination values
+  // Calculate pagination
   const totalPages = Math.ceil(filteredProjects.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const currentProjects = filteredProjects.slice(startIndex, endIndex);
 
-  // Get unique colors from projects for filter dropdown
-  const uniqueColors = Array.from(
-    new Set(projects.map(project => project.colorCode).filter(Boolean))
-  ) as string[];
-
-  // Handle project update with validation
+  // Handle project update
   const handleUpdateProject = useCallback(async () => {
     if (!editName.trim()) {
       setError("Project name is required");
@@ -231,7 +415,6 @@ export default function ProjectManagement() {
         body: JSON.stringify({
           name: editName,
           description: editDescription,
-          colorCode: getColorHexFromStatus(editStatus),
         }),
       });
       
@@ -240,14 +423,17 @@ export default function ProjectManagement() {
           router.push("/login");
           return;
         }
+        if (res.status === 403) {
+          setError("You are not authorized to update this project");
+          return;
+        }
         throw new Error("Failed to update project");
       }
       
-      // Update locally
       setProjects((prev: Project[]) =>
         prev.map((p: Project) => 
           p.id === editProject.id 
-            ? { ...p, name: editName, description: editDescription, colorCode: getColorHexFromStatus(editStatus) } 
+            ? { ...p, name: editName, description: editDescription } 
             : p
         )
       );
@@ -259,7 +445,7 @@ export default function ProjectManagement() {
     } finally {
       setIsLoading(false);
     }
-  }, [editName, editDescription, editStatus, editProject, router, setProjects]);
+  }, [editName, editDescription, editProject, router, setProjects]);
 
   // Handle project deletion
   const handleDeleteProject = useCallback(async (projectId: string) => {
@@ -286,6 +472,10 @@ export default function ProjectManagement() {
           router.push("/login");
           return;
         }
+        if (res.status === 403) {
+          setError("You are not authorized to delete this project");
+          return;
+        }
         throw new Error("Failed to delete project");
       }
       
@@ -298,7 +488,7 @@ export default function ProjectManagement() {
     }
   }, [projects, router, setProjects]);
 
-  // Handle adding a new project
+  // Handle adding a new project (Admin only)
   const handleAddProject = useCallback(async () => {
     if (!newProjectName.trim()) {
       setError("Project name is required");
@@ -325,7 +515,6 @@ export default function ProjectManagement() {
         body: JSON.stringify({
           name: newProjectName,
           description: newProjectDescription,
-          colorCode: getColorHexFromStatus(newProjectStatus),
         }),
       });
       
@@ -334,30 +523,31 @@ export default function ProjectManagement() {
           router.push("/login");
           return;
         }
+        if (res.status === 403) {
+          setError("Only administrators can create projects");
+          return;
+        }
         throw new Error("Failed to create project");
       }
       
-      // Reset form and close modal
       setNewProjectName("");
       setNewProjectDescription("");
       setNewProjectStatus("To Do");
       setIsAddProjectModalOpen(false);
-      
-      // Projects will be refetched when modal closes due to useEffect
     } catch (err) {
       console.error(err);
       setError("Failed to create project. Please try again.");
     } finally {
       setIsLoading(false);
     }
-  }, [newProjectName, newProjectDescription, newProjectStatus, router, setIsAddProjectModalOpen]);
+  }, [newProjectName, newProjectDescription, router, setIsAddProjectModalOpen]);
 
-  // Open edit modal with project data
+  // Open edit modal
   const openEditModal = useCallback((project: Project) => {
     setEditProject(project);
     setEditName(project.name);
     setEditDescription(project.description || "");
-    setEditStatus(getStatusFromColor(project.colorCode));
+    setEditStatus("To Do");
   }, []);
 
   // Close edit modal
@@ -375,19 +565,23 @@ export default function ProjectManagement() {
     setNewProjectStatus("To Do");
   }, [setIsAddProjectModalOpen]);
 
-  // Open add project modal
+  // Open add project modal (Admin only)
   const openAddModal = useCallback(() => {
+    if (user?.role !== "ADMIN") {
+      setError("Only administrators can create projects");
+      return;
+    }
     setIsAddProjectModalOpen(true);
     setError(null);
-  }, [setIsAddProjectModalOpen]);
+  }, [user, setIsAddProjectModalOpen]);
 
-  // Clear all filters
+  // Clear filters
   const clearFilters = useCallback(() => {
     setSearchQuery("");
     setFilterStatus(null);
   }, []);
 
-  // Toggle filter expansion on mobile
+  // Toggle filter expansion
   const toggleFilterExpansion = useCallback(() => {
     setIsFilterExpanded(!isFilterExpanded);
   }, [isFilterExpanded]);
@@ -395,63 +589,85 @@ export default function ProjectManagement() {
   // Handle page change
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
-    // Scroll to top of projects section
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Generate page numbers for pagination
+  // Generate page numbers
   const getPageNumbers = () => {
     const pages = [];
-    const maxVisiblePages = 5; // Maximum page numbers to show
+    const maxVisiblePages = 5;
     
     if (totalPages <= maxVisiblePages) {
-      // Show all pages if total is less than max visible
       for (let i = 1; i <= totalPages; i++) {
         pages.push(i);
       }
     } else {
-      // Always show first page
       pages.push(1);
       
-      // Calculate start and end of visible pages
       let start = Math.max(2, currentPage - Math.floor(maxVisiblePages / 2));
       let end = Math.min(totalPages - 1, start + maxVisiblePages - 3);
       
-      // Adjust start if end is too close to the end
       if (end === totalPages - 1) {
         start = Math.max(2, end - maxVisiblePages + 3);
       }
       
-      // Add ellipsis if needed
       if (start > 2) {
         pages.push('...');
       }
       
-      // Add visible pages
       for (let i = start; i <= end; i++) {
         pages.push(i);
       }
       
-      // Add ellipsis if needed
       if (end < totalPages - 1) {
         pages.push('...');
       }
       
-      // Always show last page
       pages.push(totalPages);
     }
     
     return pages;
   };
 
+  // Debug information
+  useEffect(() => {
+    console.log("Current user:", user);
+    console.log("Auth checked:", authChecked);
+    console.log("Projects:", projects);
+    console.log("Debug info:", debugInfo);
+  }, [user, authChecked, projects, debugInfo]);
+
   return (
     <div className="container mx-auto py-6 px-4 sm:px-6 lg:px-8">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-        <h1 className="text-2xl sm:text-3xl font-bold">Project Management</h1>
-        <Button onClick={openAddModal} disabled={isLoading} className="w-full sm:w-auto">
-          <Plus className="w-4 h-4 mr-2" />
-          New Project
-        </Button>
+      {/* Debug Panel */}
+      <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+        <div className="flex items-start gap-3">
+          <div className="flex-shrink-0 mt-1">
+            <AlertCircle className="h-5 w-5 text-yellow-600" />
+          </div>
+          <div className="flex-1">
+            <h3 className="font-medium text-yellow-800">Debug Information</h3>
+            <div className="mt-2 text-sm text-yellow-700">
+              <div><strong>User ID:</strong> {user?.userId || 'Not available'}</div>
+              <div><strong>Role:</strong> {user?.role || 'Not available'}</div>
+              <div><strong>Status:</strong> {authChecked ? 'Authenticated' : 'Checking...'}</div>
+              <div><strong>Loading:</strong> {isLoading ? 'Yes' : 'No'}</div>
+              <div><strong>Error:</strong> {error || 'None'}</div>
+              <div className="mt-2">
+                <strong>Token:</strong> {localStorage.getItem('token') ? 'Present' : 'Missing'}
+              </div>
+              
+              {debugInfo && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-xs">Technical Details</summary>
+                  <pre className="mt-2 text-xs bg-yellow-100 p-2 rounded overflow-auto max-h-40">
+                    {JSON.stringify(debugInfo, null, 2)}
+                  </pre>
+                </details>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
       
       {error && (
@@ -460,9 +676,36 @@ export default function ProjectManagement() {
         </div>
       )}
       
-      {/* Filter Section - Responsive */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl sm:text-3xl font-bold">Project Management</h1>
+          {user && (
+            <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-sm ${
+              user.role === "ADMIN" 
+                ? "bg-purple-100 text-purple-800" 
+                : "bg-blue-100 text-blue-800"
+            }`}>
+              {user.role === "ADMIN" ? (
+                <Shield className="w-4 h-4" />
+              ) : (
+                <User className="w-4 h-4" />
+              )}
+              {user.role}
+            </div>
+          )}
+        </div>
+        
+        {/* Only show New Project button for Admins */}
+        {user?.role === "ADMIN" && (
+          <Button onClick={openAddModal} disabled={isLoading} className="w-full sm:w-auto">
+            <Plus className="w-4 h-4 mr-2" />
+            New Project
+          </Button>
+        )}
+      </div>
+      
+      {/* Filter Section */}
       <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow mb-6">
-        {/* Mobile Filter Toggle */}
         <div className="sm:hidden mb-3">
           <Button 
             variant="outline" 
@@ -474,7 +717,6 @@ export default function ProjectManagement() {
           </Button>
         </div>
         
-        {/* Filter Controls - Hidden on mobile when collapsed */}
         <div className={`${isFilterExpanded ? 'block' : 'hidden'} sm:block`}>
           <div className="flex flex-col gap-4">
             <div className="relative">
@@ -513,7 +755,6 @@ export default function ProjectManagement() {
             </div>
           </div>
           
-          {/* Active filters display */}
           {(searchQuery || filterStatus) && (
             <div className="mt-4 flex flex-wrap gap-2">
               {searchQuery && (
@@ -531,7 +772,7 @@ export default function ProjectManagement() {
                 <div className="flex items-center gap-1 bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
                   <span 
                     className="w-3 h-3 rounded-full border" 
-                    style={{ backgroundColor: getColorHexFromStatus(filterStatus) }} 
+                    style={{ backgroundColor: getColorFromStatus(filterStatus) }} 
                   />
                   Status: {filterStatus}
                   <button 
@@ -547,10 +788,10 @@ export default function ProjectManagement() {
         </div>
       </div>
       
-      {isLoading ? (
+      {isLoading || isFetchingRole ? (
         <div className="text-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p>Loading projects...</p>
+          <p>Loading...</p>
         </div>
       ) : filteredProjects.length === 0 ? (
         <div className="text-center py-12">
@@ -559,14 +800,18 @@ export default function ProjectManagement() {
           </h2>
           <p className="text-gray-600 mb-4">
             {projects.length === 0 
-              ? "Create your first project to get started" 
+              ? (user?.role === "ADMIN" 
+                  ? "Create your first project to get started" 
+                  : "You don't have any projects assigned to you yet")
               : "Try adjusting your search or filter criteria"
             }
           </p>
-          <Button onClick={openAddModal}>
-            <Plus className="w-4 h-4 mr-2" />
-            Create Project
-          </Button>
+          {user?.role === "ADMIN" && (
+            <Button onClick={openAddModal}>
+              <Plus className="w-4 h-4 mr-2" />
+              Create Project
+            </Button>
+          )}
         </div>
       ) : (
         <>
@@ -581,8 +826,7 @@ export default function ProjectManagement() {
           
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {currentProjects.map((project) => {
-              const projectStatus = getStatusFromColor(project.colorCode);
-              const statusColor = getColorHexFromStatus(projectStatus);
+              const isOwner = user && user.userId === project.ownerId;
               
               return (
                 <Link key={project.id} href={`/TaskManager?projectId=${project.id}`} className="block">
@@ -595,33 +839,37 @@ export default function ProjectManagement() {
                             {project.description || "No description"}
                           </CardDescription>
                         </div>
-                        <div className="flex gap-1 sm:gap-2">
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className="h-8 w-8 sm:h-9 sm:w-9"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              openEditModal(project);
-                            }}
-                            aria-label="Edit project"
-                          >
-                            <Edit2 className="w-3 h-3 sm:w-4 sm:h-4" />
-                          </Button>
-                          
-                          <Button
-                            variant="destructive"
-                            size="icon"
-                            className="h-8 w-8 sm:h-9 sm:w-9"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              handleDeleteProject(project.id);
-                            }}
-                            aria-label="Delete project"
-                          >
-                            <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
-                          </Button>
-                        </div>
+                        
+                        {/* Only show edit/delete buttons for project owners */}
+                        {isOwner && (
+                          <div className="flex gap-1 sm:gap-2">
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8 sm:h-9 sm:w-9"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                openEditModal(project);
+                              }}
+                              aria-label="Edit project"
+                            >
+                              <Edit2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                            </Button>
+                            
+                            <Button
+                              variant="destructive"
+                              size="icon"
+                              className="h-8 w-8 sm:h-9 sm:w-9"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                handleDeleteProject(project.id);
+                              }}
+                              aria-label="Delete project"
+                            >
+                              <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </CardHeader>
                     
@@ -629,10 +877,17 @@ export default function ProjectManagement() {
                       <div className="flex items-center gap-2">
                         <span 
                           className="w-4 h-4 rounded-full border" 
-                          style={{ backgroundColor: statusColor }} 
+                          style={{ backgroundColor: getColorFromStatus("To Do") }} 
                           aria-hidden="true"
                         />
-                        <p className="text-sm text-gray-600">{projectStatus}</p>
+                        <p className="text-sm text-gray-600">To Do</p>
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                        <span>Owner ID:</span>
+                        <span className="font-mono">{project.ownerId}</span>
+                        {isOwner && (
+                          <span className="text-green-600">(You)</span>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -641,7 +896,6 @@ export default function ProjectManagement() {
             })}
           </div>
           
-          {/* Pagination - Only show if there's more than one page */}
           {totalPages > 1 && (
             <div className="mt-8 flex justify-center">
               <Pagination>
@@ -681,8 +935,8 @@ export default function ProjectManagement() {
         </>
       )}
       
-      {/* Add Project Modal - Responsive */}
-      {isAddProjectModalOpen && (
+      {/* Add Project Modal - Only for Admins */}
+      {isAddProjectModalOpen && user?.role === "ADMIN" && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4"
           role="dialog"
@@ -738,24 +992,6 @@ export default function ProjectManagement() {
                   rows={3}
                 />
               </div>
-              
-              <div>
-                <label htmlFor="new-project-status" className="block text-sm font-medium mb-1">
-                  Status
-                </label>
-                <select
-                  id="new-project-status"
-                  className="w-full p-2 border rounded focus:ring-primary focus:border-primary"
-                  value={newProjectStatus}
-                  onChange={(e) => setNewProjectStatus(e.target.value)}
-                >
-                  {statusOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.value}
-                    </option>
-                  ))}
-                </select>
-              </div>
             </div>
             
             <div className="mt-6 flex flex-col sm:flex-row gap-3">
@@ -779,8 +1015,8 @@ export default function ProjectManagement() {
         </div>
       )}
       
-      {/* Edit Project Modal - Responsive */}
-      {editProject && (
+      {/* Edit Project Modal - Only for Project Owners */}
+      {editProject && user && user.userId === editProject.ownerId && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4"
           role="dialog"
@@ -835,24 +1071,6 @@ export default function ProjectManagement() {
                   placeholder="Project Description"
                   rows={3}
                 />
-              </div>
-              
-              <div>
-                <label htmlFor="project-status" className="block text-sm font-medium mb-1">
-                  Status
-                </label>
-                <select
-                  id="project-status"
-                  className="w-full p-2 border rounded focus:ring-primary focus:border-primary"
-                  value={editStatus}
-                  onChange={(e) => setEditStatus(e.target.value)}
-                >
-                  {statusOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.value}
-                    </option>
-                  ))}
-                </select>
               </div>
             </div>
             
