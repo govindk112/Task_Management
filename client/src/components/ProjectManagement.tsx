@@ -1367,7 +1367,6 @@ export default function ProjectManagement() {
                         <span className="text-xs text-gray-500">({taskCount} tasks)</span>
                       </div>
                       <div className="text-xs text-gray-400 mt-1">
-                        Owner: {ownerName}
                         {isOwner && <span className="text-green-600"> (You)</span>}
                       </div>
                     </CardContent>
