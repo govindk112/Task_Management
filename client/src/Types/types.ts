@@ -12,6 +12,7 @@ export interface User {
 }
 
 export type Task = {
+  [x: string]: any;
   _id: string;
   title: string;
   description?: string;
