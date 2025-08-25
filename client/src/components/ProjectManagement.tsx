@@ -78,7 +78,6 @@ export default function ProjectManagement() {
   const [editProject, setEditProject] = useState<Project | null>(null);
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
-  const [editStatus, setEditStatus] = useState("To Do");
   
   // Add project state
   const [newProjectName, setNewProjectName] = useState("");
@@ -115,6 +114,7 @@ export default function ProjectManagement() {
   // New state for owner names and task counts
   const [ownerNames, setOwnerNames] = useState<Record<string, string>>({});
   const [taskCounts, setTaskCounts] = useState<Record<string, number>>({});
+  const [projectComputedStatuses, setProjectComputedStatuses] = useState<Record<string, string>>({});
 
   // Helper functions
   const getColorFromStatus = (status: string): string => {
@@ -122,7 +122,36 @@ export default function ProjectManagement() {
     return option ? option.color : "red";
   };
 
-  // API functions
+  // Updated computeProjectStatus function with more flexible status checking
+  const computeProjectStatus = useCallback((tasks: any[]): string => {
+    if (!tasks || tasks.length === 0) return "To Do";
+    
+    // Debug: log the tasks to see their structure
+    console.log("Computing project status for tasks:", tasks);
+    
+    // Check for any task that is in progress (case-insensitive)
+    const hasInProgress = tasks.some(task => {
+      const status = (task.status || "").toLowerCase();
+      console.log(`Task status: "${task.status}" (lowercase: "${status}")`);
+      return status === "in progress" || status === "progress";
+    });
+    
+    // Check if all tasks are complete (case-insensitive)
+    const allComplete = tasks.every(task => {
+      const status = (task.status || "").toLowerCase();
+      return status === "complete" || status === "completed" || status === "done";
+    });
+    
+    console.log(`Has in progress: ${hasInProgress}, All complete: ${allComplete}`);
+    
+    if (allComplete) return "Complete";
+    if (hasInProgress) return "In Progress";
+    return "To Do";
+  }, []);
+
+  // API functions - Define in the correct order to avoid hoisting issues
+
+  // First, define fetchUserRole
   const fetchUserRole = useCallback(async (userId: string) => {
     setIsFetchingRole(true);
     try {
@@ -182,6 +211,7 @@ export default function ProjectManagement() {
     }
   }, [router]);
 
+  // Then define fetchUserInfo
   const fetchUserInfo = useCallback(async () => {
     try {
       const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -270,7 +300,7 @@ export default function ProjectManagement() {
     }
   }, [fetchUserRole]);
 
-  // New function to fetch notifications from backend
+  // Then define fetchNotifications
   const fetchNotifications = useCallback(async () => {
     if (!user || user.role === "ADMIN") return; // Only for non-admin users
     
@@ -320,7 +350,7 @@ export default function ProjectManagement() {
     }
   }, [user, router]);
 
-  // New function to mark notification as read
+  // Then define markNotificationAsRead
   const markNotificationAsRead = useCallback(async (id: string) => {
     try {
       const token = localStorage.getItem("token");
@@ -356,7 +386,7 @@ export default function ProjectManagement() {
     }
   }, [router]);
 
-  // New function to delete notification
+  // Then define deleteNotification
   const deleteNotification = useCallback(async (id: string) => {
     try {
       const token = localStorage.getItem("token");
@@ -390,6 +420,139 @@ export default function ProjectManagement() {
     }
   }, [router]);
 
+  // Then define fetchOwnerNames
+  const fetchOwnerNames = useCallback(async (ownerIds: string[], token: string): Promise<Record<string, string>> => {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+    const ownerNamesMap: Record<string, string> = {};
+    
+    // For current user, we already have the name
+    if (user) {
+      ownerNamesMap[user.userId] = user.name || user.userId;
+    }
+    
+    const promises = ownerIds
+      .filter(id => !ownerNamesMap[id]) // Skip if we already have the name
+      .map(async (id) => {
+        try {
+          const response = await fetch(`${apiUrl}/users/${id}`, {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+          });
+          
+          if (!response.ok) {
+            console.error(`Failed to fetch owner name for ID: ${id}`);
+            return { id, name: id }; // Fallback to ID
+          }
+          
+          const data = await response.json();
+          const userData = data.user || data;
+          return { id, name: userData.name || id };
+        } catch (error) {
+          console.error(`Error fetching owner name for ID: ${id}`, error);
+          return { id, name: id }; // Fallback to ID
+        }
+      });
+    
+    const results = await Promise.all(promises);
+    results.forEach(result => {
+      ownerNamesMap[result.id] = result.name;
+    });
+    
+    return ownerNamesMap;
+  }, [user]);
+
+  // Updated fetchProjectTasks with debugging
+  const fetchProjectTasks = useCallback(async (projectIds: string[], token: string): Promise<Record<string, { count: number, status: string, tasks: any[] }>> => {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+    const result: Record<string, { count: number, status: string, tasks: any[] }> = {};
+
+    const promises = projectIds.map(async (id) => {
+      try {
+        const response = await fetch(`${apiUrl}/projects/${id}/tasks`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        
+        if (!response.ok) {
+          console.error(`Failed to fetch tasks for project ID: ${id}`);
+          return { id, count: 0, status: "To Do", tasks: [] };
+        }
+        
+        const data = await response.json();
+        const tasks = Array.isArray(data) ? data : (data.tasks || []);
+        
+        // Debug: log the tasks for this project
+        console.log(`Tasks for project ${id}:`, tasks);
+        if (tasks.length > 0) {
+          console.log(`First task for project ${id}:`, tasks[0]);
+          console.log(`First task status:`, tasks[0].status);
+        }
+        
+        // Compute the project status based on tasks
+        const status = computeProjectStatus(tasks);
+        console.log(`Computed status for project ${id}:`, status);
+        
+        return { id, count: tasks.length, status, tasks };
+      } catch (error) {
+        console.error(`Error fetching tasks for project ID: ${id}`, error);
+        return { id, count: 0, status: "To Do", tasks: [] };
+      }
+    });
+    
+    const results = await Promise.all(promises);
+    results.forEach(item => {
+      result[item.id] = { count: item.count, status: item.status, tasks: item.tasks };
+    });
+    
+    return result;
+  }, [computeProjectStatus]);
+
+  // Then define fetchProjectMembers
+  const fetchProjectMembers = useCallback(async (projectId: string) => {
+    setIsMemberLoading(true);
+    setMemberError(null);
+    
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        router.push("/login");
+        return;
+      }
+      
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      const response = await fetch(`${apiUrl}/projects/${projectId}/members`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          router.push("/login");
+          return;
+        }
+        throw new Error(`Failed to fetch project members: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      setProjectMembers(data);
+    } catch (error) {
+      console.error("Error fetching project members:", error);
+      setMemberError("Failed to load project members. Please try again.");
+    } finally {
+      setIsMemberLoading(false);
+    }
+  }, [router]);
+
+  // Finally, define fetchProjects
   const fetchProjects = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -439,18 +602,29 @@ export default function ProjectManagement() {
       console.log("Processed projects data:", projectsData);
       setProjects(projectsData);
       
-      // Fetch owner names and task counts for each project
+      // Fetch owner names and project tasks for each project
       const ownerIds = Array.from(new Set(projectsData.map(p => p.ownerId)));
       const projectIds = projectsData.map(p => p.id);
       
       try {
-        const [ownerNamesData, taskCountsData] = await Promise.all([
+        const [ownerNamesData, projectTasksData] = await Promise.all([
           fetchOwnerNames(ownerIds, token),
-          fetchTaskCounts(projectIds, token)
+          fetchProjectTasks(projectIds, token)
         ]);
         
         setOwnerNames(ownerNamesData);
-        setTaskCounts(taskCountsData);
+        
+        // Extract task counts and computed statuses
+        const taskCountsMap: Record<string, number> = {};
+        const projectStatusesMap: Record<string, string> = {};
+        
+        Object.keys(projectTasksData).forEach(projectId => {
+          taskCountsMap[projectId] = projectTasksData[projectId].count;
+          projectStatusesMap[projectId] = projectTasksData[projectId].status;
+        });
+        
+        setTaskCounts(taskCountsMap);
+        setProjectComputedStatuses(projectStatusesMap);
       } catch (error) {
         console.error("Error fetching additional project data:", error);
       }
@@ -466,126 +640,7 @@ export default function ProjectManagement() {
     } finally {
       setIsLoading(false);
     }
-  }, [router, setProjects, user, fetchNotifications]);
-
-  // New function to fetch owner names
-  const fetchOwnerNames = useCallback(async (ownerIds: string[], token: string): Promise<Record<string, string>> => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-    const ownerNamesMap: Record<string, string> = {};
-    
-    // For current user, we already have the name
-    if (user) {
-      ownerNamesMap[user.userId] = user.name || user.userId;
-    }
-    
-    const promises = ownerIds
-      .filter(id => !ownerNamesMap[id]) // Skip if we already have the name
-      .map(async (id) => {
-        try {
-          const response = await fetch(`${apiUrl}/users/${id}`, {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-          });
-          
-          if (!response.ok) {
-            console.error(`Failed to fetch owner name for ID: ${id}`);
-            return { id, name: id }; // Fallback to ID
-          }
-          
-          const data = await response.json();
-          const userData = data.user || data;
-          return { id, name: userData.name || id };
-        } catch (error) {
-          console.error(`Error fetching owner name for ID: ${id}`, error);
-          return { id, name: id }; // Fallback to ID
-        }
-      });
-    
-    const results = await Promise.all(promises);
-    results.forEach(result => {
-      ownerNamesMap[result.id] = result.name;
-    });
-    
-    return ownerNamesMap;
-  }, [user]);
-
-  // New function to fetch task counts
-  const fetchTaskCounts = useCallback(async (projectIds: string[], token: string): Promise<Record<string, number>> => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-    const taskCountsMap: Record<string, number> = {};
-    
-    const promises = projectIds.map(async (id) => {
-      try {
-        const response = await fetch(`${apiUrl}/projects/${id}/tasks`, {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        
-        if (!response.ok) {
-          console.error(`Failed to fetch tasks for project ID: ${id}`);
-          return { id, count: 0 };
-        }
-        
-        const data = await response.json();
-        const tasks = Array.isArray(data) ? data : (data.tasks || []);
-        return { id, count: tasks.length };
-      } catch (error) {
-        console.error(`Error fetching tasks for project ID: ${id}`, error);
-        return { id, count: 0 };
-      }
-    });
-    
-    const results = await Promise.all(promises);
-    results.forEach(result => {
-      taskCountsMap[result.id] = result.count;
-    });
-    
-    return taskCountsMap;
-  }, []);
-
-  const fetchProjectMembers = useCallback(async (projectId: string) => {
-    setIsMemberLoading(true);
-    setMemberError(null);
-    
-    try {
-      const token = localStorage.getItem("token");
-      if (!token) {
-        router.push("/login");
-        return;
-      }
-      
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-      const response = await fetch(`${apiUrl}/projects/${projectId}/members`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      
-      if (!response.ok) {
-        if (response.status === 401) {
-          router.push("/login");
-          return;
-        }
-        throw new Error(`Failed to fetch project members: ${response.status} ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      setProjectMembers(data);
-    } catch (error) {
-      console.error("Error fetching project members:", error);
-      setMemberError("Failed to load project members. Please try again.");
-    } finally {
-      setIsMemberLoading(false);
-    }
-  }, [router]);
+  }, [router, setProjects, user, fetchNotifications, fetchOwnerNames, fetchProjectTasks]);
 
   // Action handlers
   const handleAddMember = useCallback(async () => {
@@ -703,7 +758,7 @@ export default function ProjectManagement() {
         body: JSON.stringify({
           name: editName,
           description: editDescription,
-          status: editStatus,
+          // Status is now computed based on tasks, so we don't send it in the update
         }),
       });
       
@@ -722,7 +777,7 @@ export default function ProjectManagement() {
       setProjects((prev: Project[]) =>
         prev.map((p: Project) => 
           p.id === editProject.id 
-            ? { ...p, name: editName, description: editDescription, status: editStatus } 
+            ? { ...p, name: editName, description: editDescription } 
             : p
         )
       );
@@ -734,7 +789,7 @@ export default function ProjectManagement() {
     } finally {
       setIsLoading(false);
     }
-  }, [editName, editDescription, editStatus, editProject, router, setProjects]);
+  }, [editName, editDescription, editProject, router, setProjects]);
 
   const handleDeleteProject = useCallback(async (projectId: string) => {
     if (!confirm("Are you sure you want to delete this project?")) return;
@@ -833,7 +888,6 @@ export default function ProjectManagement() {
     setEditProject(project);
     setEditName(project.name);
     setEditDescription(project.description || "");
-    setEditStatus(project.status || "To Do");
   }, []);
 
   const closeEditModal = useCallback(() => {
@@ -993,7 +1047,7 @@ export default function ProjectManagement() {
       project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (project.description && project.description.toLowerCase().includes(searchQuery.toLowerCase()));
     
-    const projectStatus = project.status || "To Do";
+    const projectStatus = projectComputedStatuses[project.id] || project.status || "To Do";
     const matchesStatus = filterStatus ? projectStatus === filterStatus : true;
     
     return matchesSearch && matchesStatus;
@@ -1051,7 +1105,7 @@ export default function ProjectManagement() {
                           size="sm"
                           onClick={() => removeNotification(notification.id)}
                         >
-                          <X className="h-4 w-4" />
+                          
                         </Button>
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
@@ -1242,6 +1296,7 @@ export default function ProjectManagement() {
               const isOwner = user && user.userId === project.ownerId;
               const ownerName = ownerNames[project.ownerId] || project.ownerId;
               const taskCount = taskCounts[project.id] || 0;
+              const computedStatus = projectComputedStatuses[project.id] || project.status || "To Do";
               
               return (
                 <Link key={project.id} href={`/TaskManager?projectId=${project.id}`} className="block">
@@ -1305,10 +1360,10 @@ export default function ProjectManagement() {
                       <div className="flex items-center gap-2">
                         <span 
                           className="w-4 h-4 rounded-full border" 
-                          style={{ backgroundColor: getColorFromStatus(project.status || "To Do") }} 
+                          style={{ backgroundColor: getColorFromStatus(computedStatus) }} 
                           aria-hidden="true"
                         />
-                        <p className="text-sm text-gray-600">{project.status || "To Do"}</p>
+                        <p className="text-sm text-gray-600">{computedStatus}</p>
                         <span className="text-xs text-gray-500">({taskCount} tasks)</span>
                       </div>
                       <div className="text-xs text-gray-400 mt-1">
@@ -1497,24 +1552,6 @@ export default function ProjectManagement() {
                   placeholder="Project Description"
                   rows={3}
                 />
-              </div>
-
-              <div>
-                <label htmlFor="project-status" className="block text-sm font-medium mb-1">
-                  Status
-                </label>
-                <select
-                  id="project-status"
-                  className="w-full p-2 border rounded focus:ring-primary focus:border-primary"
-                  value={editStatus}
-                  onChange={(e) => setEditStatus(e.target.value)}
-                >
-                  {STATUS_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.value}
-                    </option>
-                  ))}
-                </select>
               </div>
             </div>
             

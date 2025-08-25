@@ -29,9 +29,7 @@ app.use("/users", userRoutes);
 app.use("/profile", userProfileRoutes);
 
 
-app.listen(5000, () => {
-  console.log("Server running on http://localhost:5000");
-});
+
 
 app.use("/auth", authRoutes);
 app.use("/projects", projectRoutes);
