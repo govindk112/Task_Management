@@ -52,6 +52,7 @@ interface Notification {
   message: string;
   read: boolean;
   timestamp: Date;
+  createdAt: Date;
 }
 
 // Status options
@@ -101,6 +102,7 @@ export default function ProjectManagement() {
   // Notifications state
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [isFetchingNotifications, setIsFetchingNotifications] = useState(false);
   
   // Member management state
   const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
@@ -268,6 +270,126 @@ export default function ProjectManagement() {
     }
   }, [fetchUserRole]);
 
+  // New function to fetch notifications from backend
+  const fetchNotifications = useCallback(async () => {
+    if (!user || user.role === "ADMIN") return; // Only for non-admin users
+    
+    setIsFetchingNotifications(true);
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        console.error("No token found when fetching notifications");
+        return;
+      }
+      
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      const response = await fetch(`${apiUrl}/notifications`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          router.push("/login");
+          return;
+        }
+        console.error("Failed to fetch notifications:", response.status, response.statusText);
+        return;
+      }
+      
+      const data = await response.json();
+      console.log("Notifications response:", data);
+      
+      // Transform the data to match our Notification interface
+      const transformedNotifications: Notification[] = data.map((notification: any) => ({
+        id: notification.id,
+        message: notification.message,
+        read: notification.read,
+        timestamp: new Date(notification.createdAt),
+        createdAt: new Date(notification.createdAt)
+      }));
+      
+      setNotifications(transformedNotifications);
+    } catch (error) {
+      console.error("Error fetching notifications:", error);
+    } finally {
+      setIsFetchingNotifications(false);
+    }
+  }, [user, router]);
+
+  // New function to mark notification as read
+  const markNotificationAsRead = useCallback(async (id: string) => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        console.error("No token found when marking notification as read");
+        return;
+      }
+      
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      const response = await fetch(`${apiUrl}/notifications/${id}/read`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          router.push("/login");
+          return;
+        }
+        console.error("Failed to mark notification as read:", response.status, response.statusText);
+        return;
+      }
+      
+      // Update local state
+      setNotifications(prev => 
+        prev.map(n => n.id === id ? { ...n, read: true } : n)
+      );
+    } catch (error) {
+      console.error("Error marking notification as read:", error);
+    }
+  }, [router]);
+
+  // New function to delete notification
+  const deleteNotification = useCallback(async (id: string) => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        console.error("No token found when deleting notification");
+        return;
+      }
+      
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      const response = await fetch(`${apiUrl}/notifications/${id}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          router.push("/login");
+          return;
+        }
+        console.error("Failed to delete notification:", response.status, response.statusText);
+        return;
+      }
+      
+      // Update local state
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    } catch (error) {
+      console.error("Error deleting notification:", error);
+    }
+  }, [router]);
+
   const fetchProjects = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -333,36 +455,9 @@ export default function ProjectManagement() {
         console.error("Error fetching additional project data:", error);
       }
       
+      // For non-admin users, fetch notifications after projects
       if (user && user.role !== "ADMIN") {
-        const lastChecked = localStorage.getItem(`lastProjectCheck_${user.userId}`);
-        const now = new Date().toISOString();
-        
-        localStorage.setItem(`lastProjectCheck_${user.userId}`, now);
-        
-        if (lastChecked) {
-          const prevProjects = JSON.parse(localStorage.getItem(`prevProjects_${user.userId}`) || "[]");
-          
-          if (prevProjects.length > 0) {
-            const newProjects = projectsData.filter(project => 
-              !prevProjects.some((p: Project) => p.id === project.id)
-            );
-            
-            if (newProjects.length > 0) {
-              const newNotifications: Notification[] = newProjects.map(project => ({
-                id: `notification-${Date.now()}-${project.id}`,
-                message: `You have been assigned to project: ${project.name}`,
-                read: false,
-                timestamp: new Date()
-              }));
-              
-              setNotifications(prev => [...newNotifications, ...prev]);
-            }
-          }
-          
-          localStorage.setItem(`prevProjects_${user.userId}`, JSON.stringify(projectsData));
-        } else {
-          localStorage.setItem(`prevProjects_${user.userId}`, JSON.stringify(projectsData));
-        }
+        await fetchNotifications();
       }
     } catch (error) {
       console.error("Error fetching projects:", error);
@@ -371,7 +466,7 @@ export default function ProjectManagement() {
     } finally {
       setIsLoading(false);
     }
-  }, [router, setProjects, user]);
+  }, [router, setProjects, user, fetchNotifications]);
 
   // New function to fetch owner names
   const fetchOwnerNames = useCallback(async (ownerIds: string[], token: string): Promise<Record<string, string>> => {
@@ -830,16 +925,24 @@ export default function ProjectManagement() {
   };
 
   // Notification handlers
-  const toggleNotifications = () => {
-    setShowNotifications(!showNotifications);
+  const toggleNotifications = async () => {
+    const newState = !showNotifications;
+    setShowNotifications(newState);
+    
+    // If opening notifications and we're a non-admin user, fetch notifications
+    if (newState && user && user.role !== "ADMIN") {
+      await fetchNotifications();
+    }
   };
 
-  const markAsRead = (id: string) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  // Updated markAsRead function to call backend API
+  const markAsRead = async (id: string) => {
+    await markNotificationAsRead(id);
   };
 
-  const removeNotification = (id: string) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
+  // Updated removeNotification function to call backend API
+  const removeNotification = async (id: string) => {
+    await deleteNotification(id);
   };
 
   // Effects
@@ -884,17 +987,6 @@ export default function ProjectManagement() {
     setCurrentPage(1);
   }, [searchQuery, filterStatus, projects]);
 
-  useEffect(() => {
-    if (showNotifications && notifications.length > 0) {
-      const unreadNotifications = notifications.filter(n => !n.read);
-      if (unreadNotifications.length > 0) {
-        setNotifications(prev => 
-          prev.map(n => !n.read ? { ...n, read: true } : n)
-        );
-      }
-    }
-  }, [showNotifications, notifications]);
-
   // Computed values
   const filteredProjects = projects.filter((project) => {
     const matchesSearch = 
@@ -915,67 +1007,74 @@ export default function ProjectManagement() {
   // JSX
   return (
     <div className="container mx-auto py-6 px-4 sm:px-6 lg:px-8">
-      {/* Notification Bell */}
-      <div className="fixed top-4 right-4 z-50">
-        <Button 
-          variant="outline" 
-          size="icon" 
-          className="relative"
-          onClick={toggleNotifications}
-        >
-          <Bell className="h-5 w-5" />
-          {notifications.some(n => !n.read) && (
-            <span className="absolute top-0 right-0 h-3 w-3 bg-red-500 rounded-full"></span>
-          )}
-        </Button>
-        
-        {/* Notifications Panel */}
-        {showNotifications && (
-          <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg z-50 border">
-            <div className="p-4 border-b">
-              <h3 className="font-semibold">Notifications</h3>
-            </div>
-            <div className="max-h-80 overflow-y-auto">
-              {notifications.length === 0 ? (
-                <div className="p-4 text-center text-gray-500">
-                  No notifications
-                </div>
-              ) : (
-                notifications.map(notification => (
-                  <div 
-                    key={notification.id} 
-                    className={`p-4 border-b ${!notification.read ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                  >
-                    <div className="flex justify-between">
-                      <p className={notification.read ? '' : 'font-medium'}>{notification.message}</p>
-                      <Button 
-                        variant="ghost" 
-                        size="sm"
-                        onClick={() => removeNotification(notification.id)}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      {notification.timestamp.toLocaleString()}
-                    </div>
-                    {!notification.read && (
-                      <Button 
-                        variant="link" 
-                        size="sm" 
-                        className="p-0 h-auto text-xs"
-                        onClick={() => markAsRead(notification.id)}
-                      >
-                        Mark as read
-                      </Button>
-                    )}
+      {/* Notification Bell - Only show for non-admin users */}
+      {user && user.role !== "ADMIN" && (
+        <div className="fixed top-4 right-4 z-50">
+          <Button 
+            variant="outline" 
+            size="icon" 
+            className="relative"
+            onClick={toggleNotifications}
+          >
+            <Bell className="h-5 w-5" />
+            {notifications.some(n => !n.read) && (
+              <span className="absolute top-0 right-0 h-3 w-3 bg-red-500 rounded-full"></span>
+            )}
+          </Button>
+          
+          {/* Notifications Panel */}
+          {showNotifications && (
+            <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg z-50 border">
+              <div className="p-4 border-b">
+                <h3 className="font-semibold">Notifications</h3>
+              </div>
+              <div className="max-h-80 overflow-y-auto">
+                {isFetchingNotifications ? (
+                  <div className="p-4 text-center">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto"></div>
+                    <p className="mt-2 text-sm">Loading notifications...</p>
                   </div>
-                ))
-              )}
+                ) : notifications.length === 0 ? (
+                  <div className="p-4 text-center text-gray-500">
+                    No notifications
+                  </div>
+                ) : (
+                  notifications.map(notification => (
+                    <div 
+                      key={notification.id} 
+                      className={`p-4 border-b ${!notification.read ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                    >
+                      <div className="flex justify-between">
+                        <p className={notification.read ? '' : 'font-medium'}>{notification.message}</p>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => removeNotification(notification.id)}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {notification.timestamp.toLocaleString()}
+                      </div>
+                      {!notification.read && (
+                        <Button 
+                          variant="link" 
+                          size="sm" 
+                          className="p-0 h-auto text-xs"
+                          onClick={() => markAsRead(notification.id)}
+                        >
+                          Mark as read
+                        </Button>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
       
       {error && (
         <div className="mb-6 p-4 bg-red-50 text-red-700 rounded-lg">
@@ -1141,7 +1240,7 @@ export default function ProjectManagement() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {currentProjects.map((project) => {
               const isOwner = user && user.userId === project.ownerId;
-              const ownerName = ownerNames[project.name]
+              const ownerName = ownerNames[project.ownerId] || project.ownerId;
               const taskCount = taskCounts[project.id] || 0;
               
               return (
